@@ -28,13 +28,9 @@ If these commands return version numbers, you're good to proceed.
 Clone this repository to your local machine using the following command:
 
 ```bash
-git clone https://github.com/yourusername/manhwa-ocr-tool.git
+git clone https://github.com/Liiesl/ManhwaOCR.git
 cd manhwa-ocr-tool
 ```
-
-Replace `yourusername` with your actual GitHub username.
-
----
 
 ## Step 2: Install Required Dependencies
 
@@ -53,9 +49,7 @@ The Manhwa OCR Tool relies on several Python libraries. Install them one by one 
    ```
 
 3. **EasyOCR** - For performing OCR tasks.
-   ```bash
-   pip install easyocr
-   ```
+   please refer to [easyocr's github](https://github.com/JaidedAI/EasyOCR?tab=readme-ov-file#installation) (IMPORTANT!! also check the note especially for windows)
 
 4. **NumPy** - For numerical operations.
    ```bash
