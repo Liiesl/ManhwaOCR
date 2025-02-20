@@ -4,3 +4,5 @@ temp.py
 /downloaded_images/
 /test/
 translations.txt
+testui.py
+**/__pycache__/

@@ -157,12 +157,14 @@ class TranslationWorker(QThread):
 class ResizableImageLabel(QLabel):
     def __init__(self, pixmap, filename):
         super().__init__()
+        self.setStyleSheet("background-color: transparent;")  # Add this line
         self.original_pixmap = pixmap
         self.current_pixmap = self.original_pixmap.copy()
         self.filename = filename
         self.setAlignment(Qt.AlignTop)
         self.setPixmap(self.current_pixmap)
         self.worker_thread = None
+        
 
     def apply_translation(self, text_entries):
         # Clean up any existing worker thread
