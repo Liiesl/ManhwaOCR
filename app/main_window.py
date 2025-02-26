@@ -1,5 +1,5 @@
 from PyQt5.QtWidgets import QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QFileDialog, QLabel, QProgressBar, QTableWidget, QTableWidgetItem, QScrollArea, QMessageBox, QSplitter
-from PyQt5.QtCore import Qt, pyqtSignal
+from PyQt5.QtCore import Qt, pyqtSignal, QDateTime, QTimer
 from PyQt5.QtGui import QPixmap
 import qtawesome as qta
 from core.ocr_processor import OCRProcessor
@@ -48,10 +48,29 @@ class MainWindow(QMainWindow):
         self.reader = None
         self.ocr_processor = None
 
+        # Add a timer for smooth progress updates
+        self.progress_timer = QTimer(self)
+        self.progress_timer.timeout.connect(self.update_progress_smoothly)
+        
+        # Variables for time tracking
+        self.start_time = None
+        self.processing_times = []
+        self.current_progress = 0
+        self.target_progress = 0
+
     def init_ui(self):
         # Set the main widget and layout
         main_widget = QWidget()
         main_layout = QHBoxLayout()  # Main horizontal layout
+
+        self.colors = {
+        "background": "#1E1E1E",
+        "surface": "#2D2D2D",
+        "primary": "#3A3A3A",
+        "secondary": "#4A4A4A",
+        "accent": "#007ACC",
+        "text": "#FFFFFF"
+        }
 
         # Apply global stylesheet for the application
         self.setStyleSheet("""
@@ -75,13 +94,25 @@ class MainWindow(QMainWindow):
             QPushButton:pressed {
                 background-color: #2A2A2A;
             }
-            /* Table header style */
-            QHeaderView::section {
-                background-color: #3A3A3A;
-                color: #FFFFFF;
-                padding: 4px;
-                border: 1px solid #2A2A2A;
+                           
+            /* Table styling */
+            QTableWidget {
+                background-color: #2D2D2D;
+                gridline-color: "#3A3A3A";
+                border-radius: 50px;
             }
+            QHeaderView::section {
+                background-color: "#3A3A3A";
+                padding: 12px;
+                border: none;
+            }
+            QTableWidget::item {
+                padding: 2px;
+            }
+            QTableWidget::item:selected {
+                background-color: "#007ACC";
+            }
+                           
             /* Scroll area style */
             QScrollArea {
                 border: 20px solid #2A2A2A; /* Solid color border */
@@ -328,7 +359,48 @@ class MainWindow(QMainWindow):
         print("Starting OCR...")
         self.reader = easyocr.Reader(['ko'])  # Initialize once here
         self.current_image_index = 0  # Start from the first image
+        
+        # Reset time tracking variables
+        self.start_time = QDateTime.currentDateTime()
+        self.processing_times.clear()
+        self.current_progress = 0
+        self.target_progress = 0
+        
+        # Set the first 20% of the progress bar to 10 seconds
+        self.flat_progress_timer = QTimer(self)
+        self.flat_progress_timer.timeout.connect(self.update_flat_progress)
+        self.flat_progress_timer_duration = 5000  # 10 seconds
+        self.flat_progress_timer_interval = 70  # Update every 100ms
+        self.flat_progress_steps = self.flat_progress_timer_duration // self.flat_progress_timer_interval
+        self.flat_progress_increment = 20 / self.flat_progress_steps  # 20% over 10 seconds
+        self.flat_progress_timer.start(self.flat_progress_timer_interval)
+
+        # Start the progress timer for smooth updates
+        self.progress_timer = QTimer(self)
+        self.progress_timer.timeout.connect(self.update_progress_smoothly)
+        self.update_dynamic_timer_interval()  # Initialize the timer interval
         self.process_next_image()
+
+    def update_dynamic_timer_interval(self):
+        """Update the interval of the progress timer based on ETA."""
+        if self.current_image_index > 0 and self.processing_times:
+            avg_processing_time = sum(self.processing_times) / len(self.processing_times)
+            remaining_images = len(self.image_paths) - self.current_image_index
+            estimated_remaining_time = avg_processing_time * remaining_images
+            
+            # Adjust the timer interval dynamically
+            # Ensure the interval is at least 50ms and at most 500ms
+            new_interval = max(50, min(int(estimated_remaining_time / 10), 500))
+            self.progress_timer.setInterval(new_interval)
+
+    def update_flat_progress(self):
+        if self.current_progress < 20:
+            self.current_progress += self.flat_progress_increment
+            self.ocr_progress.setValue(int(self.current_progress))
+        else:
+            self.flat_progress_timer.stop()
+            self.progress_timer.start()  # Start the main progress timer after flat progress
+
 
     def process_next_image(self):
         if self.current_image_index >= len(self.image_paths):
@@ -338,6 +410,10 @@ class MainWindow(QMainWindow):
             self.reader = None
             self.ocr_processor = None
             gc.collect()
+            
+            # Stop the progress timer
+            self.progress_timer.stop()
+            self.ocr_progress.setValue(100)
             return
 
         self.btn_process.setVisible(False)
@@ -354,32 +430,54 @@ class MainWindow(QMainWindow):
         self.ocr_processor.start()
 
     def update_ocr_progress_for_image(self, progress):
-        overall_progress = int((self.current_image_index / len(self.image_paths)) * 100 + progress / len(self.image_paths))
-        self.ocr_progress.setValue(overall_progress)
+        if self.current_image_index == 0:
+            # Ignore the first image's processing time for estimation
+            overall_progress = 20 + int((self.current_image_index / len(self.image_paths)) * 80 + progress / len(self.image_paths) * 80)
+        else:
+            overall_progress = 20 + int((self.current_image_index / len(self.image_paths)) * 80 + progress / len(self.image_paths) * 80)
+        self.target_progress = overall_progress
+
+    def update_progress_smoothly(self):
+        # Gradually increase the progress bar towards the target
+        if self.current_progress < self.target_progress:
+            self.current_progress += 1
+            self.ocr_progress.setValue(int(self.current_progress))
+
+        # Recalculate estimated time dynamically after the first image
+        if self.current_image_index > 0:
+            # Use the average processing time of all processed images
+            avg_processing_time = sum(self.processing_times) / len(self.processing_times)
+            remaining_images = len(self.image_paths) - self.current_image_index
+            estimated_remaining_time = avg_processing_time * remaining_images
+
+            # Display estimated time in the progress bar tooltip
+            self.ocr_progress.setToolTip(f"Estimated time remaining: {estimated_remaining_time:.1f} seconds")
+
+            # Update the dynamic timer interval
+            self.update_dynamic_timer_interval()
 
     def handle_ocr_results(self, results):
         if self.ocr_processor.stop_requested:
             print("Partial results discarded due to stop request")
             return
-
-        # Calculate the starting row number for this batch
-        start_row = len(self.ocr_results)
         
-        # Add filename and row number to each result
+        # Record the processing time for the current image
+        end_time = QDateTime.currentDateTime()
+        processing_time = self.start_time.msecsTo(end_time) / 1000  # in seconds
+        self.processing_times.append(processing_time)
+
+        # Add results to the global list
+        start_row = len(self.ocr_results)
         current_image_path = self.image_paths[self.current_image_index]
         filename = os.path.basename(current_image_path)
         for idx, result in enumerate(results):
             result['filename'] = filename
             result['row_number'] = start_row + idx  # Use continuous row numbering across all images
-            
+
         # Group and merge text from the same speech bubble
         merged_results = group_and_merge_text(results)
-        
-        # Make sure the merged results maintain proper row numbers
         for idx, result in enumerate(merged_results):
             result['row_number'] = start_row + idx
-            
-        # Add merged results to the global list
         self.ocr_results.extend(merged_results)
 
         # Update the table
@@ -390,7 +488,20 @@ class MainWindow(QMainWindow):
         if self.current_image_index >= len(self.image_paths):
             self.btn_stop_ocr.setVisible(False)
             self.btn_process.setVisible(True)
+        else:
+            # Recalculate estimated time after processing each image
+            self.recalculate_estimated_time()
         self.process_next_image()
+    
+    def recalculate_estimated_time(self):
+        if self.current_image_index > 0:
+            # Use the processing time of the most recent image
+            most_recent_processing_time = self.processing_times[-1]
+            remaining_images = len(self.image_paths) - self.current_image_index
+            estimated_remaining_time = most_recent_processing_time * remaining_images
+
+            # Display estimated time in the progress bar tooltip
+            self.ocr_progress.setToolTip(f"Estimated time remaining: {estimated_remaining_time:.1f} seconds")
 
     def update_results_table(self):
         self.results_table.blockSignals(True)  # Block signals during update
@@ -456,6 +567,9 @@ class MainWindow(QMainWindow):
             self.reader = None
             gc.collect()
             QMessageBox.information(self, "Stopped", "OCR processing was stopped.")
+
+        # Stop the progress timer
+        self.progress_timer.stop()
 
     def export_ocr(self):
         export_ocr_results(self)
