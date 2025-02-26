@@ -9,7 +9,7 @@ This guide will help you set up and run the Manhwa OCR Tool on your system. Foll
 
 Before proceeding, ensure that you have the following installed on your system:
 
-- **Python 3.8 or higher**: You can download it from [python.org](https://www.python.org/downloads/).
+- **Python 3.9 or higher**: You can download it from [python.org](https://www.python.org/downloads/).
 - **pip**: Python's package installer (usually included with Python).
 
 Verify your Python and pip installations by running the following commands in your terminal:
@@ -34,54 +34,27 @@ cd manhwa-ocr-tool
 
 ## Step 2: Install Required Dependencies
 
-The Manhwa OCR Tool relies on several Python libraries. Install them one by one using `pip`. Below is the list of required dependencies:
-
-### Core Libraries
-
-1. **PyQt5** - For creating the graphical user interface.
-   ```bash
-   pip install PyQt5
-   ```
-
-2. **Pillow** - For image processing.
-   ```bash
-   pip install Pillow
-   ```
-
-3. **EasyOCR** - For performing OCR tasks.
-   please refer to [easyocr's github](https://github.com/JaidedAI/EasyOCR?tab=readme-ov-file#installation) (IMPORTANT!! also check the note especially for windows)
-
-4. **NumPy** - For numerical operations.
-   ```bash
-   pip install numpy
-   ```
-
-5. **qtawesome** - For icons in the GUI.
-   ```bash
-   pip install qtawesome
-   ```
-
-6. **PyYAML** - For configuration file handling (optional, if needed).
-   ```bash
-   pip install pyyaml
-   ```
-
-### Additional Libraries
-
-7. **json** - Standard library, no installation needed.
-8. **os**, **sys**, **gc**, **ast** - Standard libraries, no installation needed.
-
-After installing all the above packages, verify their installation by importing them in a Python shell:
-
-```python
-import PyQt5
-import PIL
-import easyocr
-import numpy
-import qtawesome
+Install core dependencies with a single command:
+```bash
+pip install PyQt5 qtawesome easyocr numpy Pillow google-generativeai
 ```
 
-If no errors occur, the libraries are installed correctly.
+**For EasyOCR** (requires system dependencies):
+```bash
+pip install easyocr
+```
+⚠️ **IMPORTANT**: Follow [EasyOCR's GitHub instructions](https://github.com/JaidedAI/EasyOCR#installation) closely (especially windows user, please read their note).
+
+---
+
+Verify Installation
+Run this command to check all core dependencies:
+
+```bash
+python -c "import PyQt5, Pillow, easyocr, numpy, qtawesome, google-generativeai; print('All dependencies installed successfully!')"
+```
+If no errors appear, you're ready to proceed.
+(Note: EasyOCR requires additional system dependencies - verify its functionality by processing an image)
 
 ---
 
