@@ -1,11 +1,13 @@
 from PyQt5.QtWidgets import QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QFileDialog, QLabel, QProgressBar, QTableWidget, QTableWidgetItem, QScrollArea, QMessageBox, QSplitter
-from PyQt5.QtCore import Qt, pyqtSignal, QDateTime, QTimer
+from PyQt5.QtCore import Qt, pyqtSignal, QDateTime, QTimer, QSettings
 from PyQt5.QtGui import QPixmap
 import qtawesome as qta
 from core.ocr_processor import OCRProcessor
 from utils.file_io import export_ocr_results, import_translation_file
 from core.data_processing import group_and_merge_text
 from app.widgets import ResizableImageLabel
+from utils.settings import SettingsDialog
+from core.translations import translate_with_gemini
 import easyocr
 import os
 import gc
@@ -37,6 +39,9 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.setWindowTitle("Manga OCR Tool")
         self.setGeometry(100, 100, 1200, 600)
+        self.settings = QSettings("YourCompany", "MangaOCRTool")
+        self.min_text_area = int(self.settings.value("min_text_area", 4000))
+        self.distance_threshold = int(self.settings.value("distance_threshold", 100))
         
         self.init_ui()
         self.current_image = None
@@ -137,6 +142,31 @@ class MainWindow(QMainWindow):
                 width: 10px;
             }
             
+            /* Tab Widget style */
+            QTabWidget {
+                background-color: #1A1A1A;
+                border: none;
+            }
+            QTabWidget::pane {
+                border: 1px solid #3A3A3A;
+                border-radius: 10px;
+                background-color: #2D2D2D;
+            }
+            QTabBar::tab {
+                background-color: #3A3A3A;
+                color: #FFFFFF;
+                padding: 10px;
+                border: none;
+                border-radius: 5px;
+            }
+            QTabBar::tab:selected {
+                background-color: #4A4A4A;
+                margin-bottom: -1px; /* Ensure selected tab appears above the pane border */
+            }
+            QTabBar::tab:!selected {
+                margin-top: 2px; /* Add some spacing between unselected tabs and the pane */
+            }
+
             QSplitter {
                 width: 30px;
             }
@@ -151,9 +181,18 @@ class MainWindow(QMainWindow):
         left_panel.setSpacing(20)
 
         # Open Folder Button
+        settings_layout = QHBoxLayout()
+
+        self.btn_settings = QPushButton(qta.icon('fa5s.cog', color='white'), "")
+        self.btn_settings.setFixedSize(50, 50)
+        self.btn_settings.clicked.connect(self.show_settings_dialog)
+        settings_layout.addWidget(self.btn_settings)
+
         self.btn_open = QPushButton(qta.icon('fa5s.folder-open', color='white'), "Open Folder")
         self.btn_open.clicked.connect(self.open_folder)
-        left_panel.addWidget(self.btn_open)
+        settings_layout.addWidget(self.btn_open)
+
+        left_panel.addLayout(settings_layout)
 
         # Progress bars in their own row
         progress_layout = QVBoxLayout()
@@ -281,10 +320,18 @@ class MainWindow(QMainWindow):
         self.results_table.setHorizontalHeaderLabels(["Text", "Confidence", "Coordinates", "File", "Line Counts", "Row Number"])
         right_panel.addWidget(self.results_table)
 
-        # Apply Translation Button
+        # Modify translation button layout
+        translation_btn_layout = QHBoxLayout()
+        
+        self.btn_translate = QPushButton(qta.icon('fa5s.language', color='white'), "Translate")
+        self.btn_translate.clicked.connect(self.start_translation)
+        translation_btn_layout.addWidget(self.btn_translate)
+        
         self.btn_apply_translation = QPushButton(qta.icon('fa5s.check', color='white'), "Apply Translation")
         self.btn_apply_translation.clicked.connect(self.apply_translation)
-        right_panel.addWidget(self.btn_apply_translation)
+        translation_btn_layout.addWidget(self.btn_apply_translation)
+        
+        right_panel.addLayout(translation_btn_layout)
 
         # Create the right widget and apply specific styles
         right_widget = QWidget()
@@ -321,6 +368,13 @@ class MainWindow(QMainWindow):
         main_layout.addWidget(splitter)
         main_widget.setLayout(main_layout)
         self.setCentralWidget(main_widget)
+
+    def show_settings_dialog(self):
+        dialog = SettingsDialog(self)
+        if dialog.exec_():
+            # Update settings in main window
+            self.min_text_area = int(self.settings.value("min_text_area", 4000))
+            self.distance_threshold = int(self.settings.value("distance_threshold", 100))
 
     def open_folder(self):
         folder = QFileDialog.getExistingDirectory(self, "Select Image Folder")
@@ -423,7 +477,11 @@ class MainWindow(QMainWindow):
         print(f"Processing image {self.current_image_index + 1}/{len(self.image_paths)}: {image_path}")
 
         # Start OCR for the current image
-        self.ocr_processor = OCRProcessor(image_path, self.reader)
+        self.ocr_processor = OCRProcessor(
+            image_path, 
+            self.reader, 
+            min_text_area=self.min_text_area  # Pass new setting
+        )
         self.ocr_processor.ocr_progress.connect(self.update_ocr_progress_for_image)
         self.ocr_processor.ocr_finished.connect(self.handle_ocr_results)
         self.ocr_processor.error_occurred.connect(self.handle_error)
@@ -475,7 +533,10 @@ class MainWindow(QMainWindow):
             result['row_number'] = start_row + idx  # Use continuous row numbering across all images
 
         # Group and merge text from the same speech bubble
-        merged_results = group_and_merge_text(results)
+        merged_results = group_and_merge_text(
+            results, 
+            distance_threshold=self.distance_threshold  # Pass new setting
+        )
         for idx, result in enumerate(merged_results):
             result['row_number'] = start_row + idx
         self.ocr_results.extend(merged_results)
@@ -573,6 +634,153 @@ class MainWindow(QMainWindow):
 
     def export_ocr(self):
         export_ocr_results(self)
+
+    def start_translation(self):
+        """Handle translation using Gemini API."""
+        api_key = self.settings.value("gemini_api_key", "")
+        model_name = self.settings.value("gemini_model", "gemini-2.0-flash")  # Get selected model
+        if not api_key:
+            QMessageBox.critical(self, "Error", "Please set Gemini API key in Settings")
+            return
+            
+        # Generate for-translate format
+        content = self.generate_for_translate_content()
+
+        # Debug print: Show the content being sent to Gemini
+        print("\n===== DEBUG: Content sent to Gemini =====\n")
+        print(content)
+        print("\n=======================================\n")
+        
+        try:
+            translated_text = translate_with_gemini(api_key, content, model_name=model_name,)  # Pass selected model
+
+            # Debug print: Show the raw response from Gemini
+            print("\n===== DEBUG: Raw response from Gemini =====\n")
+            print(translated_text)
+            print("\n==========================================\n")
+
+            self.import_translated_content(translated_text)
+            QMessageBox.information(self, "Success", "Translation completed successfully!")
+        except Exception as e:
+            QMessageBox.critical(self, "Error", str(e))
+
+    def generate_for_translate_content(self):
+        """Generate Markdown content in for-translate format."""
+        content = "<!-- type: for-translate -->\n\n"
+        grouped_results = {}
+        extensions = set()
+
+        for result in self.ocr_results:
+            filename = result['filename']
+            ext = os.path.splitext(filename)[1].lstrip('.').lower()
+            extensions.add(ext)
+            text = result['text']
+            row_number = result['row_number']
+            
+            if filename not in grouped_results:
+                grouped_results[filename] = []
+            grouped_results[filename].append((text, row_number))
+
+        if len(extensions) == 1:
+            content += f"<!-- ext: {list(extensions)[0]} -->\n\n"
+
+        for idx, (filename, texts) in enumerate(grouped_results.items()):
+            if idx > 0:
+                content += "\n\n"
+            content += f"<!-- file: {filename} -->\n\n"
+            sorted_texts = sorted(texts, key=lambda x: x[1])
+            for text, row_number in sorted_texts:
+                lines = text.split('\n')
+                for line in lines:
+                    content += f"{line.strip()}\n"
+                    content += f"-/{row_number}\\-\n"
+
+        return content
+
+    def import_translated_content(self, content):
+        """Import translated content back into OCR results."""
+        try:
+            # Reuse existing import logic
+            self.import_translation_file_content(content)
+            self.update_results_table()
+        except Exception as e:
+            raise Exception(f"Failed to import translation: {str(e)}")
+        
+    def import_translation_file_content(self, content):
+        """Modified version of import_translation that works with direct content instead of file path."""
+        try:
+            # Debug print: Show the content being parsed
+            print("\n===== DEBUG: Content being parsed =====\n")
+            print(content)
+            print("\n======================================\n")
+            if '<!-- type: for-translate -->' not in content:
+                raise ValueError("Unsupported MD format - missing type comment.")
+
+            translations = {}
+            current_file = None
+            file_texts = {}
+            current_entry = []  # Buffer for current text entry
+            row_numbers = []
+
+            # Parse filename groups and entries
+            for line in content.split('\n'):
+                line = line.strip()
+                if line.startswith('<!-- file:') and line.endswith('-->'):
+                    # Save previous file's entries
+                    if current_file is not None and current_entry:
+                        file_texts[current_file].append(('\n'.join(current_entry), row_numbers))
+                        current_entry = []
+                        row_numbers = []
+                    # Extract filename
+                    current_file = line[10:-3].strip()
+                    file_texts[current_file] = []
+                elif line.startswith('-/') and line.endswith('\\-'):
+                    # Extract row number from marker (e.g., "-/3\\-")
+                    if current_entry:
+                        row_number_str = line[2:-2].strip()
+                        try:
+                            row_number = int(row_number_str)
+                        except ValueError:
+                            row_number = 0  # Default to 0 if parsing fails
+                        row_numbers.append(row_number)
+                        # Save current entry
+                        file_texts[current_file].append(('\n'.join(current_entry), row_numbers))
+                        current_entry = []
+                        row_numbers = []
+                elif current_file is not None:
+                    # Skip empty lines between entries
+                    if line or current_entry:
+                        current_entry.append(line)
+
+            # Add the last entry if buffer isn't empty
+            if current_file is not None and current_entry:
+                file_texts[current_file].append(('\n'.join(current_entry), row_numbers))
+
+            # Debug print: Show parsed structure
+            print("\n===== DEBUG: Parsed structure =====\n")
+            for filename, entries in file_texts.items():
+                print(f"File: {filename}")
+                for entry in entries:
+                    print(f"  - Text: {entry[0]}")
+                    print(f"    Row numbers: {entry[1]}")
+            print("\n==================================\n")
+
+            # Rebuild translations in original OCR order
+            translation_index = {k: 0 for k in file_texts.keys()}
+            for result in self.ocr_results:
+                filename = result['filename']
+                if filename in file_texts and translation_index[filename] < len(file_texts[filename]):
+                    translated_text, row_numbers = file_texts[filename][translation_index[filename]]
+                    result['text'] = translated_text
+                    result['row_number'] = row_numbers[0]  # Update row number
+                    translation_index[filename] += 1
+                    print(f"DEBUG: Updated {filename} row {row_numbers[0]} with translation")
+
+                else:
+                    print(f"Warning: No translation found for entry in '{filename}'")
+
+        except Exception as e:
+            raise Exception(f"Failed to parse translated content: {str(e)}")
 
     def apply_translation(self):
         """Apply translations to images based on OCR results."""

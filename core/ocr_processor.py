@@ -9,12 +9,12 @@ class OCRProcessor(QThread):
     ocr_finished = pyqtSignal(list)  # Results for the current image
     error_occurred = pyqtSignal(str)
 
-    def __init__(self, image_path, reader):
+    def __init__(self, image_path, reader, min_text_area):
         super().__init__()
         self.image_path = image_path
         self.reader = reader  # Reuse the existing reader
         self.stop_requested = False  # Add stop flag
-        self.min_text_area = 4000  # Define a minimum area threshold for text regions
+        self.min_text_area = min_text_area  # Define a minimum area threshold for text regions
 
     def run(self):
         try:

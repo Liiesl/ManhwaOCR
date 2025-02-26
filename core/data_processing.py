@@ -1,6 +1,6 @@
 import numpy as np
 
-def group_and_merge_text(results, distance_threshold=100):
+def group_and_merge_text(results, distance_threshold):
     """
     Groups and merges text regions that are close to each other.
     :param results: List of OCR results (each containing 'coordinates' and 'text').
