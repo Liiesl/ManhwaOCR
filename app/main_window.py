@@ -1,38 +1,16 @@
-from PyQt5.QtWidgets import QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QFileDialog, QLabel, QProgressBar, QTableWidget, QTableWidgetItem, QScrollArea, QMessageBox, QSplitter
+from PyQt5.QtWidgets import QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QFileDialog, QLabel, QProgressBar, QTableWidget, QTableWidgetItem, QMessageBox, QSplitter, QHeaderView, QAction
 from PyQt5.QtCore import Qt, pyqtSignal, QDateTime, QTimer, QSettings
-from PyQt5.QtGui import QPixmap
+from PyQt5.QtGui import QPixmap, QKeySequence
 import qtawesome as qta
 from core.ocr_processor import OCRProcessor
 from utils.file_io import export_ocr_results, import_translation_file
 from core.data_processing import group_and_merge_text
-from app.widgets import ResizableImageLabel
+from app.widgets import ResizableImageLabel, CustomScrollArea
 from utils.settings import SettingsDialog
 from core.translations import translate_with_gemini
 import easyocr
 import os
 import gc
-
-class CustomScrollArea(QScrollArea):
-    def __init__(self, overlay_widget, parent=None):
-        super().__init__(parent)
-        self.overlay_widget = overlay_widget
-
-    def resizeEvent(self, event):
-        super().resizeEvent(event)
-        self.update_overlay_position()
-
-    def update_overlay_position(self):
-        if self.overlay_widget:
-            overlay_width = 300
-            overlay_height = 60
-            scroll_width = self.width()
-            scroll_height = self.height()
-
-            # Calculate the new position for the overlay
-            x = (scroll_width - overlay_width) // 2
-            y = scroll_height - overlay_height - 20  # 10 pixels from the bottom
-
-            self.overlay_widget.setGeometry(x, y, overlay_width, overlay_height)
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -42,6 +20,9 @@ class MainWindow(QMainWindow):
         self.settings = QSettings("YourCompany", "MangaOCRTool")
         self.min_text_area = int(self.settings.value("min_text_area", 4000))
         self.distance_threshold = int(self.settings.value("distance_threshold", 100))
+        self.combine_action = QAction("Combine Rows", self)
+        self.combine_action.triggered.connect(self.combine_selected_rows)
+        self.update_shortcut()
         
         self.init_ui()
         self.current_image = None
@@ -114,8 +95,24 @@ class MainWindow(QMainWindow):
             QTableWidget::item {
                 padding: 2px;
             }
-            QTableWidget::item:selected {
-                background-color: "#007ACC";
+            QTableWidget::item.column-6 {  /* Target the 7th column (index 6) */
+                background-color: transparent;
+                border: none;
+            }
+            
+            /* Ensure table buttons use the same style */
+            QTableWidget QPushButton {
+                background-color: #3A3A3A;
+                color: #FFFFFF;
+                border: none;
+                padding: 10px;
+                border-radius: 20px;
+            }
+            QTableWidget QPushButton:hover {
+                background-color: #4A4A4A;
+            }
+            QTableWidget QPushButton:pressed {
+                background-color: #2A2A2A;
             }
                            
             /* Scroll area style */
@@ -316,8 +313,17 @@ class MainWindow(QMainWindow):
 
         # OCR Results Table
         self.results_table = QTableWidget()
-        self.results_table.setColumnCount(6)   # Add one more column
-        self.results_table.setHorizontalHeaderLabels(["Text", "Confidence", "Coordinates", "File", "Line Counts", "Row Number"])
+        self.results_table.setColumnCount(7)
+        self.results_table.setHorizontalHeaderLabels(["Text", "Confidence", "Coordinates", "File", "Line Counts", "Row Number", ""])
+        # Set column width after creating the table
+        self.results_table.setColumnWidth(1, 50)
+        self.results_table.setColumnWidth(2, 50)
+        self.results_table.setColumnWidth(3, 50)
+        self.results_table.setColumnWidth(5, 50)
+        self.results_table.setColumnWidth(6, 50)
+        self.results_table.horizontalHeader().setSectionResizeMode(6, QHeaderView.Fixed)
+        self.results_table.setContextMenuPolicy(Qt.ActionsContextMenu)
+        self.results_table.addAction(self.combine_action)
         right_panel.addWidget(self.results_table)
 
         # Modify translation button layout
@@ -575,30 +581,55 @@ class MainWindow(QMainWindow):
 
             # Confidence (non-editable)
             confidence_item = QTableWidgetItem(f"{result['confidence']:.2f}")
+            confidence_item.setTextAlignment(Qt.AlignCenter)
             confidence_item.setFlags(confidence_item.flags() & ~Qt.ItemIsEditable)
             self.results_table.setItem(row, 1, confidence_item)
 
             # Coordinates (non-editable)
             coord_item = QTableWidgetItem(str(result['coordinates']))
+            coord_item.setTextAlignment(Qt.AlignCenter)
             coord_item.setFlags(coord_item.flags() & ~Qt.ItemIsEditable)
             self.results_table.setItem(row, 2, coord_item)
 
             # File (non-editable)
             file_item = QTableWidgetItem(result['filename'])
+            file_item.setTextAlignment(Qt.AlignCenter)
             file_item.setFlags(file_item.flags() & ~Qt.ItemIsEditable)
             self.results_table.setItem(row, 3, file_item)
 
             # Line Counts (editable)
             line_counts = str(result.get('line_counts', 1))
             line_item = QTableWidgetItem(line_counts)
+            line_item.setTextAlignment(Qt.AlignCenter)
             line_item.setFlags(line_item.flags() | Qt.ItemIsEditable)
             self.results_table.setItem(row, 4, line_item)
 
             # Row Number (non-editable)
             row_item = QTableWidgetItem(str(result['row_number']))
+            row_item.setTextAlignment(Qt.AlignCenter)
             row_item.setFlags(row_item.flags() & ~Qt.ItemIsEditable)
             self.results_table.setItem(row, 5, row_item)
-        self.results_table.blockSignals(False)  # Unblock signals
+
+            # Add Delete Button
+            delete_btn = QPushButton(qta.icon('fa5s.trash-alt', color='red'), "")
+            delete_btn.setFixedSize(30, 30)
+            
+            # Create a container widget with right-aligned button
+            container = QWidget()
+            layout = QHBoxLayout()
+            layout.addStretch()  # Pushes the button to the right
+            layout.addWidget(delete_btn)
+            layout.setContentsMargins(0, 0, 0, 0)
+            container.setLayout(layout)
+            
+            self.results_table.setCellWidget(row, 6, container)
+            delete_btn.clicked.connect(lambda _, r=row: self.delete_row(r))
+        self.results_table.blockSignals(False)
+    
+    def delete_row(self, row):
+        if 0 <= row < len(self.ocr_results):
+            del self.ocr_results[row]
+            self.update_results_table()  # Rebuild the table to reflect changes
 
     def on_cell_changed(self, row, column):
         if row < 0 or row >= len(self.ocr_results):
@@ -618,6 +649,74 @@ class MainWindow(QMainWindow):
                 self.results_table.blockSignals(True)
                 self.results_table.item(row, column).setText(prev_value)
                 self.results_table.blockSignals(False)
+
+    def update_shortcut(self):
+        shortcut = self.settings.value("combine_shortcut", "Ctrl+G")
+        self.combine_action.setShortcut(QKeySequence(shortcut))
+        
+    def show_settings_dialog(self):
+        dialog = SettingsDialog(self)
+        if dialog.exec_():
+            self.update_shortcut()
+            # ... existing settings update code ...
+    
+    def combine_selected_rows(self):
+        selected_ranges = self.results_table.selectedRanges()
+        if not selected_ranges:
+            return
+            
+        selected_rows = sorted(set(
+            row for r in selected_ranges 
+            for row in range(r.topRow(), r.bottomRow()+1)
+        ))
+        
+        # Check if valid selection
+        if len(selected_rows) < 2:
+            QMessageBox.warning(self, "Warning", "Select at least 2 adjacent rows to combine")
+            return
+            
+        # Check adjacency and same file
+        if any(selected_rows[i+1] - selected_rows[i] != 1 for i in range(len(selected_rows)-1)):
+            QMessageBox.warning(self, "Warning", "Selected rows must be adjacent")
+            return
+            
+        first_row = selected_rows[0]
+        last_row = selected_rows[-1]
+        
+        # Check if all rows are from same file
+        filenames = {self.ocr_results[row]['filename'] for row in selected_rows}
+        if len(filenames) > 1:
+            QMessageBox.warning(self, "Warning", "Cannot combine rows from different files")
+            return
+            
+        # Combine the rows
+        combined_text = []
+        total_lines = 0
+        coordinates = []
+        
+        for row in selected_rows:
+            result = self.ocr_results[row]
+            combined_text.append(result['text'])
+            total_lines += result.get('line_counts', 1)
+            coordinates.extend(result['coordinates'])
+            
+        # Create merged result
+        merged_result = {
+            'text': '\n'.join(combined_text),
+            'confidence': min(r['confidence'] for r in self.ocr_results[first_row:last_row+1]),
+            'coordinates': coordinates,
+            'filename': self.ocr_results[first_row]['filename'],
+            'line_counts': total_lines,
+            'row_number': self.ocr_results[first_row]['row_number']
+        }
+        
+        # Update OCR results
+        del self.ocr_results[first_row+1:last_row+1]
+        self.ocr_results[first_row] = merged_result
+        
+        # Update table
+        self.update_results_table()
+        QMessageBox.information(self, "Success", f"Combined {len(selected_rows)} rows")
     
     def stop_ocr(self):
         if hasattr(self, 'ocr_processor'):

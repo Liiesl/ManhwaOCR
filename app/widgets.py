@@ -1,4 +1,4 @@
-from PyQt5.QtWidgets import QLabel, QGraphicsScene, QGraphicsPixmapItem, QGraphicsBlurEffect
+from PyQt5.QtWidgets import QLabel, QGraphicsScene, QGraphicsPixmapItem, QGraphicsBlurEffect, QScrollArea
 from PyQt5.QtCore import Qt, QRect, QThread, pyqtSignal
 from PyQt5.QtGui import QPixmap, QPainter, QFont, QResizeEvent
 
@@ -204,3 +204,25 @@ class ResizableImageLabel(QLabel):
 
     def __del__(self):
         self.cleanup()
+
+class CustomScrollArea(QScrollArea):
+    def __init__(self, overlay_widget, parent=None):
+        super().__init__(parent)
+        self.overlay_widget = overlay_widget
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self.update_overlay_position()
+
+    def update_overlay_position(self):
+        if self.overlay_widget:
+            overlay_width = 300
+            overlay_height = 60
+            scroll_width = self.width()
+            scroll_height = self.height()
+
+            # Calculate the new position for the overlay
+            x = (scroll_width - overlay_width) // 2
+            y = scroll_height - overlay_height - 20  # 10 pixels from the bottom
+
+            self.overlay_widget.setGeometry(x, y, overlay_width, overlay_height)

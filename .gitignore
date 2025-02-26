@@ -6,3 +6,4 @@ temp.py
 translations.txt
 testui.py
 **/__pycache__/
+/md_splitter/

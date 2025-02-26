@@ -1,5 +1,6 @@
-from PyQt5.QtWidgets import QDialog, QVBoxLayout, QFormLayout, QComboBox, QSpinBox, QDialogButtonBox, QTabWidget, QWidget, QLineEdit
+from PyQt5.QtWidgets import QDialog, QVBoxLayout, QFormLayout, QComboBox, QSpinBox, QDialogButtonBox, QTabWidget, QWidget, QLineEdit, QKeySequenceEdit
 from PyQt5.QtCore import Qt
+from PyQt5.QtGui import QKeySequence
 
 class SettingsDialog(QDialog):
     def __init__(self, parent=None):
@@ -67,6 +68,19 @@ class SettingsDialog(QDialog):
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
         main_layout.addWidget(buttons)  # Add buttons after the tab widget
+
+        # Add Keyboard Shortcuts Tab
+        shortcuts_tab = QWidget()
+        shortcuts_layout = QFormLayout()
+        
+        # Combine Rows Shortcut
+        self.combine_shortcut_edit = QKeySequenceEdit(
+            QKeySequence(self.settings.value("combine_shortcut", "Ctrl+G"))
+        )
+        shortcuts_layout.addRow("Combine Rows Shortcut:", self.combine_shortcut_edit)
+        
+        shortcuts_tab.setLayout(shortcuts_layout)
+        self.tab_widget.addTab(shortcuts_tab, "Keyboard Shortcuts")
         
         # Set the main layout for the dialog
         self.setLayout(main_layout)
@@ -77,4 +91,5 @@ class SettingsDialog(QDialog):
         self.settings.setValue("distance_threshold", self.distance_spin.value())
         self.settings.setValue("gemini_api_key", self.api_key_edit.text())
         self.settings.setValue("gemini_model", self.model_combo.currentText())
+        self.settings.setValue("combine_shortcut", self.combine_shortcut_edit.keySequence().toString())
         super().accept()
