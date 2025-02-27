@@ -1,5 +1,5 @@
-from PyQt5.QtWidgets import QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QFileDialog, QLabel, QProgressBar, QTableWidget, QTableWidgetItem, QMessageBox, QSplitter, QHeaderView, QAction
-from PyQt5.QtCore import Qt, pyqtSignal, QDateTime, QTimer, QSettings
+from PyQt5.QtWidgets import QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QSizePolicy, QPushButton, QFileDialog, QLabel, QProgressBar, QTableWidget, QTableWidgetItem, QMessageBox, QSplitter, QHeaderView, QAction
+from PyQt5.QtCore import Qt, pyqtSignal, QDateTime, QTimer, QSettings, QRectF
 from PyQt5.QtGui import QPixmap, QKeySequence
 import qtawesome as qta
 from core.ocr_processor import OCRProcessor
@@ -43,6 +43,10 @@ class MainWindow(QMainWindow):
         self.processing_times = []
         self.current_progress = 0
         self.target_progress = 0
+
+        self.active_image_label = None
+        self.confirm_button = None
+        self.current_text_items = []
 
     def init_ui(self):
         # Set the main widget and layout
@@ -202,6 +206,7 @@ class MainWindow(QMainWindow):
         self.scroll_area = CustomScrollArea(None)  # Initialize with None, will be set later
         self.scroll_content = QWidget()
         self.scroll_content.setStyleSheet("background-color: transparent;")  # Add this line
+        self.scroll_content.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)  # Add this
         self.scroll_layout = QVBoxLayout(self.scroll_content)
         self.scroll_layout.setContentsMargins(0, 0, 0, 0)
         self.scroll_layout.setSpacing(0)
@@ -387,6 +392,7 @@ class MainWindow(QMainWindow):
         if folder:
             self.process_folder(folder)
 
+    # Update process_folder method
     def process_folder(self, folder):
         self.image_paths = sorted([os.path.join(folder, f) for f in os.listdir(folder) 
                         if f.lower().endswith(('png', 'jpg', 'jpeg'))])
@@ -404,7 +410,7 @@ class MainWindow(QMainWindow):
             if widget:
                 widget.deleteLater()
 
-        # Add images to scroll area
+        # Add images to single scroll area
         for image_path in self.image_paths:
             pixmap = QPixmap(image_path)
             filename = os.path.basename(image_path)
@@ -908,33 +914,92 @@ class MainWindow(QMainWindow):
 
     def export_manhwa(self):
         """Export images with applied translations into a ZIP file."""
-        # Ensure there are processed images before proceeding
         if not self.image_paths:
             QMessageBox.warning(self, "Warning", "No images available for export.")
             return
 
-        # Collect all translated images
+        import tempfile
+        import shutil
+        from PyQt5.QtGui import QPainter, QFontMetricsF, QColor
+        from PyQt5.QtCore import Qt
+
+        temp_dir = tempfile.mkdtemp()
         translated_images = []
-        for i in range(self.scroll_layout.count()):
-            widget = self.scroll_layout.itemAt(i).widget()
-            if isinstance(widget, ResizableImageLabel):
-                # Get the updated image with applied translation
-                translated_image_path = widget.get_updated_image_path()
-                if translated_image_path:
-                    translated_images.append((translated_image_path, os.path.basename(translated_image_path)))
 
-        if not translated_images:
-            QMessageBox.warning(self, "Warning", "No translated images found.")
-            return
+        try:
+            for i in range(self.scroll_layout.count()):
+                widget = self.scroll_layout.itemAt(i).widget()
+                if isinstance(widget, ResizableImageLabel):
+                    # Create a copy of the original pixmap to modify
+                    original_pixmap = widget.original_pixmap.copy()
+                    painter = QPainter(original_pixmap)
+                    painter.setRenderHints(QPainter.Antialiasing | QPainter.TextAntialiasing)
 
-        # Call the export function from file_io
-        from utils.file_io import export_translated_images_to_zip
-        export_path, success = export_translated_images_to_zip(translated_images)
+                    for text_box in widget.text_boxes:
+                        text = text_box.text_item.toPlainText()
+                        original_rect = text_box.original_rect
+                        
+                        # Calculate available space (with padding)
+                        available_width = int(original_rect.width() - 20)
+                        available_height = int(original_rect.height() - 20)
+                        
+                        # Determine optimal font size for original dimensions
+                        font = text_box.text_item.font()
+                        min_size, max_size = 6, 72
+                        optimal_size = min_size
+                        low, high = min_size, max_size
+                        
+                        while low <= high:
+                            mid = (low + high) // 2
+                            font.setPointSize(mid)
+                            metrics = QFontMetricsF(font)
+                            text_rect = metrics.boundingRect(
+                                QRectF(0, 0, available_width, available_height),
+                                Qt.TextWordWrap | Qt.AlignCenter, 
+                                text
+                            )
+                            if text_rect.height() <= available_height and text_rect.width() <= available_width:
+                                optimal_size = mid
+                                low = mid + 1
+                            else:
+                                high = mid - 1
+                        
+                        # Configure painter
+                        font.setPointSize(optimal_size)
+                        painter.setFont(font)
+                        
+                        # Draw background rectangle first
+                        painter.setBrush(QColor(Qt.white))  # Set fill color to white
+                        painter.setPen(QColor(Qt.black))    # Set border color to black
+                        painter.drawRect(original_rect)     # Draw the background rectangle
+                        
+                        # Draw text in original coordinates with padding
+                        painter.setPen(QColor(Qt.black))    # Set text color to black
+                        draw_rect = QRectF(
+                            original_rect.x() + 10,
+                            original_rect.y() + 10,
+                            available_width,
+                            available_height
+                        )
+                        painter.drawText(draw_rect, Qt.AlignCenter | Qt.TextWordWrap, text)
 
-        if success:
-            QMessageBox.information(self, "Success", f"Images successfully exported to:\n{export_path}")
-        else:
-            QMessageBox.critical(self, "Error", "Failed to export images.")
+                    painter.end()
+
+                    # Save modified image
+                    temp_path = os.path.join(temp_dir, widget.filename)
+                    original_pixmap.save(temp_path)
+                    translated_images.append((temp_path, widget.filename))
+
+            # Package images into ZIP
+            from utils.file_io import export_translated_images_to_zip
+            export_path, success = export_translated_images_to_zip(translated_images)
+
+            if success:
+                QMessageBox.information(self, "Success", f"Exported to:\n{export_path}")
+            else:
+                QMessageBox.critical(self, "Error", "Export failed")
+        finally:
+            shutil.rmtree(temp_dir, ignore_errors=True)
 
     def handle_error(self, message):
         print(f"Error occurred: {message}")
