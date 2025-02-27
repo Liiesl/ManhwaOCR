@@ -1,6 +1,6 @@
 from PyQt5.QtWidgets import QLabel, QGraphicsScene, QSizePolicy, QGraphicsPixmapItem, QGraphicsBlurEffect, QGraphicsTextItem, QScrollArea, QGraphicsItem, QGraphicsRectItem, QGraphicsView, QGraphicsDropShadowEffect
 from PyQt5.QtCore import Qt, QRect, QThread, pyqtSignal, QRectF,QPointF
-from PyQt5.QtGui import QPixmap, QPainter, QFont, QResizeEvent, QBrush, QColor, QPen, QTextOption
+from PyQt5.QtGui import QPixmap, QPainter, QFont, QResizeEvent, QBrush, QColor, QPen, QTextOption, QFontDatabase
 
 class TextBoxItem(QGraphicsRectItem):
     def __init__(self, rect, row_number, text="", original_rect=None):
@@ -53,7 +53,10 @@ class TextBoxItem(QGraphicsRectItem):
 
         self.text_item = QGraphicsTextItem(text, self)
         self.text_item.setDefaultTextColor(Qt.black)
-        font = QFont()
+        # Load custom font
+        font_id = QFontDatabase.addApplicationFont("assets/fonts/animeace.ttf")
+        font_family = QFontDatabase.applicationFontFamilies(font_id)[0] if font_id != -1 else "Arial"
+        font = QFont(font_family)
         font.setPointSize(12)
         self.text_item.setFont(font)
         self.setRect(rect)
