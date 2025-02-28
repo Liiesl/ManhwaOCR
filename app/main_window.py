@@ -913,41 +913,51 @@ class MainWindow(QMainWindow):
         import_translation_file(self)
 
     def export_manhwa(self):
-        """Export images with applied translations by rendering the QGraphicsScene."""
+        """Export images with applied translations by rendering the QGraphicsView at its original size."""
         if not self.image_paths:
             QMessageBox.warning(self, "Warning", "No images available for export.")
             return
 
-        import tempfile
-        import shutil
+        import tempfile, shutil
         from PyQt5.QtGui import QImage, QPainter
         from PyQt5.QtCore import Qt
+        from PyQt5.QtWidgets import QApplication  # Needed to process events
 
         temp_dir = tempfile.mkdtemp()
         translated_images = []
+        original_sizes = {}  # Dictionary to store each widget's current size
 
         try:
+            # Iterate over all image widgets in the scroll area
             for i in range(self.scroll_layout.count()):
                 widget = self.scroll_layout.itemAt(i).widget()
                 if isinstance(widget, ResizableImageLabel):
-                    # Render the entire scene
+                    # Store the current size
+                    original_sizes[widget] = widget.size()
+                    # Resize widget to the original image size
+                    widget.resize(widget.original_pixmap.size())
+                    QApplication.processEvents()  # Force the update (resizeEvent will be called)
+
+                    # Now render the scene directly from the QGraphicsView's scene
                     scene = widget.scene()
                     scene_rect = scene.sceneRect()
-                    
-                    # Create image with scene dimensions
                     image = QImage(int(scene_rect.width()), int(scene_rect.height()), QImage.Format_ARGB32)
                     image.fill(Qt.transparent)
-                    
+
                     painter = QPainter(image)
                     scene.render(painter)
                     painter.end()
 
-                    # Save rendered image
+                    # Save rendered image to temporary file
                     temp_path = os.path.join(temp_dir, widget.filename)
                     image.save(temp_path)
                     translated_images.append((temp_path, widget.filename))
 
-            # Package images into ZIP
+            # Restore all widgets to their original sizes
+            for widget, size in original_sizes.items():
+                widget.resize(size)
+
+            # Package images into ZIP (using your existing helper)
             from utils.file_io import export_translated_images_to_zip
             export_path, success = export_translated_images_to_zip(translated_images)
 
@@ -957,6 +967,7 @@ class MainWindow(QMainWindow):
                 QMessageBox.critical(self, "Error", "Export failed")
         finally:
             shutil.rmtree(temp_dir, ignore_errors=True)
+
 
     def handle_error(self, message):
         print(f"Error occurred: {message}")
