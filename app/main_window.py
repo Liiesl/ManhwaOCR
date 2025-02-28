@@ -913,14 +913,14 @@ class MainWindow(QMainWindow):
         import_translation_file(self)
 
     def export_manhwa(self):
-        """Export images with applied translations into a ZIP file."""
+        """Export images with applied translations by rendering the QGraphicsScene."""
         if not self.image_paths:
             QMessageBox.warning(self, "Warning", "No images available for export.")
             return
 
         import tempfile
         import shutil
-        from PyQt5.QtGui import QPainter, QFontMetricsF, QColor
+        from PyQt5.QtGui import QImage, QPainter
         from PyQt5.QtCore import Qt
 
         temp_dir = tempfile.mkdtemp()
@@ -930,64 +930,21 @@ class MainWindow(QMainWindow):
             for i in range(self.scroll_layout.count()):
                 widget = self.scroll_layout.itemAt(i).widget()
                 if isinstance(widget, ResizableImageLabel):
-                    # Create a copy of the original pixmap to modify
-                    original_pixmap = widget.original_pixmap.copy()
-                    painter = QPainter(original_pixmap)
-                    painter.setRenderHints(QPainter.Antialiasing | QPainter.TextAntialiasing)
-
-                    for text_box in widget.text_boxes:
-                        text = text_box.text_item.toPlainText()
-                        original_rect = text_box.original_rect
-                        
-                        # Calculate available space (with padding)
-                        available_width = int(original_rect.width() - 20)
-                        available_height = int(original_rect.height() - 20)
-                        
-                        # Determine optimal font size for original dimensions
-                        font = text_box.text_item.font()
-                        min_size, max_size = 6, 72
-                        optimal_size = min_size
-                        low, high = min_size, max_size
-                        
-                        while low <= high:
-                            mid = (low + high) // 2
-                            font.setPointSize(mid)
-                            metrics = QFontMetricsF(font)
-                            text_rect = metrics.boundingRect(
-                                QRectF(0, 0, available_width, available_height),
-                                Qt.TextWordWrap | Qt.AlignCenter, 
-                                text
-                            )
-                            if text_rect.height() <= available_height and text_rect.width() <= available_width:
-                                optimal_size = mid
-                                low = mid + 1
-                            else:
-                                high = mid - 1
-                        
-                        # Configure painter
-                        font.setPointSize(optimal_size)
-                        painter.setFont(font)
-                        
-                        # Draw background rectangle first
-                        painter.setBrush(QColor(Qt.white))  # Set fill color to white
-                        painter.setPen(QColor(Qt.black))    # Set border color to black
-                        painter.drawRect(original_rect)     # Draw the background rectangle
-                        
-                        # Draw text in original coordinates with padding
-                        painter.setPen(QColor(Qt.black))    # Set text color to black
-                        draw_rect = QRectF(
-                            original_rect.x() + 10,
-                            original_rect.y() + 10,
-                            available_width,
-                            available_height
-                        )
-                        painter.drawText(draw_rect, Qt.AlignCenter | Qt.TextWordWrap, text)
-
+                    # Render the entire scene
+                    scene = widget.scene()
+                    scene_rect = scene.sceneRect()
+                    
+                    # Create image with scene dimensions
+                    image = QImage(int(scene_rect.width()), int(scene_rect.height()), QImage.Format_ARGB32)
+                    image.fill(Qt.transparent)
+                    
+                    painter = QPainter(image)
+                    scene.render(painter)
                     painter.end()
 
-                    # Save modified image
+                    # Save rendered image
                     temp_path = os.path.join(temp_dir, widget.filename)
-                    original_pixmap.save(temp_path)
+                    image.save(temp_path)
                     translated_images.append((temp_path, widget.filename))
 
             # Package images into ZIP
