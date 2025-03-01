@@ -56,9 +56,23 @@ class SettingsDialog(QDialog):
         current_model = self.settings.value("gemini_model", "gemini-2.0-flash")
         self.model_combo.setCurrentText(current_model)
         api_layout.addRow("Gemini Model:", self.model_combo)
+
+        self.lang_combo = QComboBox()
+        self.lang_combo.addItems([
+            "English",
+            "Japanese",
+            "Chinese (Simplified)",
+            "Spanish",
+            "French",
+            "German",
+            "Bahasa Indonesia"
+        ])
+        current_lang = self.settings.value("target_language", "English")
+        self.lang_combo.setCurrentText(current_lang)
+        api_layout.addRow("Target Language:", self.lang_combo)
         
         api_tab.setLayout(api_layout)
-        self.tab_widget.addTab(api_tab, "Translation APIs")
+        self.tab_widget.addTab(api_tab, "Translations")
         
         # Add the tab widget to the main layout
         main_layout.addWidget(self.tab_widget)
@@ -92,4 +106,5 @@ class SettingsDialog(QDialog):
         self.settings.setValue("gemini_api_key", self.api_key_edit.text())
         self.settings.setValue("gemini_model", self.model_combo.currentText())
         self.settings.setValue("combine_shortcut", self.combine_shortcut_edit.keySequence().toString())
+        self.settings.setValue("target_language", self.lang_combo.currentText())
         super().accept()

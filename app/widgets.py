@@ -1,10 +1,17 @@
-from PyQt5.QtWidgets import QLabel, QGraphicsScene, QSizePolicy, QGraphicsPixmapItem, QGraphicsBlurEffect, QGraphicsTextItem, QScrollArea, QGraphicsItem, QGraphicsRectItem, QGraphicsView, QGraphicsDropShadowEffect
-from PyQt5.QtCore import Qt, QRect, QThread, pyqtSignal, QRectF,QPointF
+from PyQt5.QtWidgets import QLabel, QGraphicsScene, QSizePolicy, QGraphicsPixmapItem, QGraphicsBlurEffect, QGraphicsEllipseItem, QGraphicsTextItem, QScrollArea, QGraphicsItem, QGraphicsRectItem, QGraphicsView, QGraphicsDropShadowEffect, QStyledItemDelegate, QTextEdit
+from PyQt5.QtCore import Qt, QRect, QThread, pyqtSignal, QRectF, QPointF, QObject
 from PyQt5.QtGui import QPixmap, QPainter, QFont, QResizeEvent, QBrush, QColor, QPen, QTextOption, QFontDatabase
+import qtawesome as qta
+
+class TextBoxSignals(QObject):
+    rowDeleted = pyqtSignal(int)
 
 class TextBoxItem(QGraphicsRectItem):
     def __init__(self, rect, row_number, text="", original_rect=None):
-        super().__init__(rect)
+        super().__init__(QRectF(0, 0, rect.width(), rect.height()))  # Local rect starts at (0,0)
+        # Set the item's position in the scene (this is where the rect will be drawn)
+        self.setPos(rect.x(), rect.y())  # Position in the scen
+        self.signals = TextBoxSignals()  # Signal holder
         self.setFlag(QGraphicsItem.ItemIsMovable, True)
         self.setFlag(QGraphicsItem.ItemIsSelectable, True)
         self.setFlag(QGraphicsItem.ItemSendsGeometryChanges, True)
@@ -12,7 +19,7 @@ class TextBoxItem(QGraphicsRectItem):
         self.original_rect = original_rect  # Store original image coordinates
         self.setBrush(QBrush(QColor(255, 255, 255)))
         self.setPen(QPen(QColor(0, 0, 0, 0), 1))
-        self.corner_radius = 20
+        self.corner_radius = 50
         self.min_width = 50  # Minimum width
         self.min_height = 30  # Minimum height
         self.resize_mode = False
@@ -51,6 +58,25 @@ class TextBoxItem(QGraphicsRectItem):
             
         self.update_handles_positions()
 
+        # Create a circular remove button with an icon
+        self.remove_button = QGraphicsEllipseItem(0, 0, 20, 20, self)  # Use ellipse for a circle
+        self.remove_button.setBrush(QBrush(Qt.red))
+        self.remove_button.setPen(QPen(Qt.black))
+        self.remove_button.setPos(rect.width() - 30, -20)  # Adjust position (top-right corner)
+        self.remove_button.hide()
+
+        # Add icon using QtAwesome
+        remove_icon = qta.icon('fa.times', color='white')  # Use FontAwesome 'times' icon
+        pixmap = remove_icon.pixmap(16, 16)  # Generate a 16x16 pixmap
+        self.remove_icon_item = QGraphicsPixmapItem(pixmap, self.remove_button)
+        self.remove_icon_item.setOffset(1, 1)  # Center the icon within the button
+        # Handle click
+        self.remove_button.setFlag(QGraphicsItem.ItemIsSelectable, True)
+        def on_remove_clicked(event):
+            self.signals.rowDeleted.emit(self.row_number)
+            event.accept()
+        self.remove_button.mousePressEvent = on_remove_clicked
+
         self.text_item = QGraphicsTextItem(text, self)
         self.text_item.setDefaultTextColor(Qt.black)
         # Load custom font
@@ -71,7 +97,9 @@ class TextBoxItem(QGraphicsRectItem):
         if rect.height() < self.min_height:
             rect.setHeight(self.min_height)
             
-        super().setRect(rect)
+        # Ensure the local rect starts at (0,0) and has the new size
+        new_rect = QRectF(0, 0, rect.width(), rect.height())
+        super().setRect(new_rect)
         
         # Center the text item within the rectangle
         self.text_item.setPos(rect.x() + 10, rect.y() + 10)
@@ -82,6 +110,8 @@ class TextBoxItem(QGraphicsRectItem):
         document.setDefaultTextOption(QTextOption(Qt.AlignCenter))
         
         self.adjust_font_size()
+        # Update remove button position
+        self.remove_button.setPos(rect.width() - 20, -20)
         self.update_handles_positions()
 
     def adjust_font_size(self):
@@ -268,10 +298,11 @@ class TextBoxItem(QGraphicsRectItem):
                     return new_pos
                     
         elif change == QGraphicsItem.ItemSelectedHasChanged:
-            # Show/hide handles on selection
+            # Show/hide handles and remove button when selected
             selected = bool(value)
             for handle in self.handles:
                 handle.setVisible(selected)
+            self.remove_button.setVisible(selected)
                 
         elif change == QGraphicsItem.ItemSceneHasChanged:
             if value is not None:
@@ -300,6 +331,8 @@ class TextBoxItem(QGraphicsRectItem):
         self.cleanup()
 
 class ResizableImageLabel(QGraphicsView):
+    textBoxDeleted = pyqtSignal(int)  # Signal to forward deletion
+
     def __init__(self, pixmap, filename):
         super().__init__()
         self.setScene(QGraphicsScene())
@@ -387,14 +420,34 @@ class ResizableImageLabel(QGraphicsView):
             original_rect = QRectF(x, y, width, height)  # Original image coordinates
             scale_factor = self.width() / self.original_pixmap.width()
             scaled_rect = QRectF(
-                x * scale_factor,
-                y * scale_factor,
+                0, 0,  # Start at (0,0) locally
                 width * scale_factor,
                 height * scale_factor
             )
             text_box = TextBoxItem(scaled_rect, row, entry['text'], original_rect)
+            # Set the item's scene position explicitly
+            text_box.setPos(x * scale_factor, y * scale_factor)
             self.scene().addItem(text_box)
+            text_box.signals.rowDeleted.connect(self.handle_text_box_deleted)
             self.text_boxes.append(text_box)
+
+    def handle_text_box_deleted(self, row_number):
+        # Remove from scene and list
+        for text_box in self.text_boxes[:]:  # Iterate over a copy of the list
+            if text_box.row_number == row_number:
+                # Deselect and remove from scene
+                text_box.setSelected(False)
+                self.scene().removeItem(text_box)
+                
+                # Manually clean up child items
+                text_box.cleanup()
+                
+                # Remove from list
+                self.text_boxes.remove(text_box)
+                break
+        # Notify MainWindow
+        self.textBoxDeleted.emit(row_number)
+
     def cleanup(self):
         """Clean up resources before removal."""
         # Remove handles
@@ -434,3 +487,20 @@ class CustomScrollArea(QScrollArea):
             y = scroll_height - overlay_height - 20  # 10 pixels from the bottom
 
             self.overlay_widget.setGeometry(x, y, overlay_width, overlay_height)
+
+class TextEditDelegate(QStyledItemDelegate):
+    def createEditor(self, parent, option, index):
+        editor = QTextEdit(parent)
+        editor.setAcceptRichText(False)
+        editor.setLineWrapMode(QTextEdit.WidgetWidth)
+        return editor
+
+    def setEditorData(self, editor, index):
+        text = index.model().data(index, Qt.DisplayRole)
+        editor.setPlainText(text)
+
+    def setModelData(self, editor, model, index):
+        model.setData(index, editor.toPlainText(), Qt.EditRole)
+
+    def updateEditorGeometry(self, editor, option, index):
+        editor.setGeometry(option.rect)

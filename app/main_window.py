@@ -1,11 +1,11 @@
 from PyQt5.QtWidgets import QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QSizePolicy, QPushButton, QFileDialog, QLabel, QProgressBar, QTableWidget, QTableWidgetItem, QMessageBox, QSplitter, QHeaderView, QAction
-from PyQt5.QtCore import Qt, pyqtSignal, QDateTime, QTimer, QSettings, QRectF
-from PyQt5.QtGui import QPixmap, QKeySequence
+from PyQt5.QtCore import Qt, pyqtSignal, QDateTime, QTimer, QSettings, QRectF, QEvent
+from PyQt5.QtGui import QPixmap, QKeySequence, QFontMetrics
 import qtawesome as qta
 from core.ocr_processor import OCRProcessor
 from utils.file_io import export_ocr_results, import_translation_file
 from core.data_processing import group_and_merge_text
-from app.widgets import ResizableImageLabel, CustomScrollArea
+from app.widgets import ResizableImageLabel, CustomScrollArea, TextEditDelegate
 from utils.settings import SettingsDialog
 from core.translations import translate_with_gemini
 import easyocr
@@ -47,6 +47,8 @@ class MainWindow(QMainWindow):
         self.active_image_label = None
         self.confirm_button = None
         self.current_text_items = []
+
+        self.results_table.installEventFilter(self)
 
     def init_ui(self):
         # Set the main widget and layout
@@ -321,6 +323,7 @@ class MainWindow(QMainWindow):
         self.results_table.setColumnCount(7)
         self.results_table.setHorizontalHeaderLabels(["Text", "Confidence", "Coordinates", "File", "Line Counts", "Row Number", ""])
         # Set column width after creating the table
+        self.results_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch)
         self.results_table.setColumnWidth(1, 50)
         self.results_table.setColumnWidth(2, 50)
         self.results_table.setColumnWidth(3, 50)
@@ -328,6 +331,8 @@ class MainWindow(QMainWindow):
         self.results_table.setColumnWidth(6, 50)
         self.results_table.horizontalHeader().setSectionResizeMode(6, QHeaderView.Fixed)
         self.results_table.setContextMenuPolicy(Qt.ActionsContextMenu)
+        self.results_table.setWordWrap(True)
+        self.results_table.setItemDelegateForColumn(0, TextEditDelegate(self))  # Add delegate for column 0
         self.results_table.addAction(self.combine_action)
         right_panel.addWidget(self.results_table)
 
@@ -384,6 +389,7 @@ class MainWindow(QMainWindow):
         dialog = SettingsDialog(self)
         if dialog.exec_():
             # Update settings in main window
+            self.update_shortcut()
             self.min_text_area = int(self.settings.value("min_text_area", 4000))
             self.distance_threshold = int(self.settings.value("distance_threshold", 100))
 
@@ -415,6 +421,7 @@ class MainWindow(QMainWindow):
             pixmap = QPixmap(image_path)
             filename = os.path.basename(image_path)
             label = ResizableImageLabel(pixmap, filename)
+            label.textBoxDeleted.connect(self.delete_row)  # Connect signal
             self.scroll_layout.addWidget(label)
 
     def start_ocr(self):
@@ -582,6 +589,7 @@ class MainWindow(QMainWindow):
         for row, result in enumerate(self.ocr_results):
             # Text column (editable)
             text_item = QTableWidgetItem(result['text'])
+            text_item.setTextAlignment(Qt.AlignTop | Qt.AlignLeft)  # Add this line
             text_item.setFlags(text_item.flags() | Qt.ItemIsEditable)
             self.results_table.setItem(row, 0, text_item)
 
@@ -630,12 +638,42 @@ class MainWindow(QMainWindow):
             
             self.results_table.setCellWidget(row, 6, container)
             delete_btn.clicked.connect(lambda _, r=row: self.delete_row(r))
+        self.adjust_row_heights()
         self.results_table.blockSignals(False)
     
-    def delete_row(self, row):
-        if 0 <= row < len(self.ocr_results):
-            del self.ocr_results[row]
-            self.update_results_table()  # Rebuild the table to reflect changes
+    # Modify adjust_row_heights to better handle word wrap
+    def adjust_row_heights(self):
+        for row in range(self.results_table.rowCount()):
+            text_item = self.results_table.item(row, 0)
+            if text_item:
+                text = text_item.text()
+                font = text_item.font()
+                font_metrics = QFontMetrics(font)
+                column_width = self.results_table.columnWidth(0)
+                
+                # Calculate required height with word wrap
+                rect = font_metrics.boundingRect(
+                    0, 0, column_width, 0,
+                    Qt.TextWordWrap,
+                    text
+                )
+                required_height = rect.height()
+                
+                # Add padding for better visibility
+                self.results_table.setRowHeight(row, required_height + 10)
+
+    def eventFilter(self, obj, event):
+        if obj == self.results_table and event.type() == QEvent.Resize:
+            self.adjust_row_heights()
+        return super().eventFilter(obj, event)
+    
+    def delete_row(self, row_number):
+        # Find the OCR result with the given row_number
+        for idx, result in enumerate(self.ocr_results):
+            if result['row_number'] == row_number:
+                del self.ocr_results[idx]
+                self.update_results_table()
+                break
 
     def on_cell_changed(self, row, column):
         if row < 0 or row >= len(self.ocr_results):
@@ -659,12 +697,6 @@ class MainWindow(QMainWindow):
     def update_shortcut(self):
         shortcut = self.settings.value("combine_shortcut", "Ctrl+G")
         self.combine_action.setShortcut(QKeySequence(shortcut))
-        
-    def show_settings_dialog(self):
-        dialog = SettingsDialog(self)
-        if dialog.exec_():
-            self.update_shortcut()
-            # ... existing settings update code ...
     
     def combine_selected_rows(self):
         selected_ranges = self.results_table.selectedRanges()
@@ -755,9 +787,10 @@ class MainWindow(QMainWindow):
         print("\n===== DEBUG: Content sent to Gemini =====\n")
         print(content)
         print("\n=======================================\n")
-        
+
+        target_lang = self.settings.value("target_language", "English")
         try:
-            translated_text = translate_with_gemini(api_key, content, model_name=model_name,)  # Pass selected model
+            translated_text = translate_with_gemini(api_key, content, model_name=model_name, target_lang=target_lang)  # Pass selected model
 
             # Debug print: Show the raw response from Gemini
             print("\n===== DEBUG: Raw response from Gemini =====\n")
@@ -967,7 +1000,6 @@ class MainWindow(QMainWindow):
                 QMessageBox.critical(self, "Error", "Export failed")
         finally:
             shutil.rmtree(temp_dir, ignore_errors=True)
-
 
     def handle_error(self, message):
         print(f"Error occurred: {message}")
