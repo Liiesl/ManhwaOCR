@@ -484,7 +484,7 @@ class CustomScrollArea(QScrollArea):
 
             # Calculate the new position for the overlay
             x = (scroll_width - overlay_width) // 2
-            y = scroll_height - overlay_height - 20  # 10 pixels from the bottom
+            y = scroll_height - overlay_height - 30  # 10 pixels from the bottom
 
             self.overlay_widget.setGeometry(x, y, overlay_width, overlay_height)
 

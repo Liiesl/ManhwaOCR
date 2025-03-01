@@ -1,6 +1,6 @@
-from PyQt5.QtWidgets import QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QSizePolicy, QPushButton, QFileDialog, QLabel, QProgressBar, QTableWidget, QTableWidgetItem, QMessageBox, QSplitter, QHeaderView, QAction
+from PyQt5.QtWidgets import QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QSizePolicy, QFrame, QScrollArea, QStackedWidget, QCheckBox, QPushButton, QFileDialog, QLabel, QProgressBar, QTableWidget, QTableWidgetItem, QMessageBox, QSplitter, QHeaderView, QAction, QTextEdit
 from PyQt5.QtCore import Qt, pyqtSignal, QDateTime, QTimer, QSettings, QRectF, QEvent
-from PyQt5.QtGui import QPixmap, QKeySequence, QFontMetrics
+from PyQt5.QtGui import QPixmap, QKeySequence, QFontMetrics, QTextOption
 import qtawesome as qta
 from core.ocr_processor import OCRProcessor
 from utils.file_io import export_ocr_results, import_translation_file
@@ -177,6 +177,65 @@ class MainWindow(QMainWindow):
             QTableWidget {
                 background-color: #1A1A1A;
             }
+            /* Scroll Bar Styling */
+            QScrollBar:vertical {
+                background-color: #1A1A1A;
+                width: 15px;
+                margin: 0px;
+                border-radius: 7px;
+            }
+
+            QScrollBar::handle:vertical {
+                background-color: #4A4A4A;
+                min-height: 30px;
+                border-radius: 7px;
+            }
+
+            QScrollBar::handle:vertical:hover {
+                background-color: #5A5A5A;
+            }
+
+            QScrollBar::handle:vertical:pressed {
+                background-color: #007ACC;
+            }
+
+            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
+                height: 0px;
+            }
+
+            QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {
+                background: none;
+            }
+
+            /* Horizontal Scroll Bar */
+            QScrollBar:horizontal {
+                background-color: #1A1A1A;
+                height: 15px;
+                margin: 0px;
+                border-radius: 7px;
+            }
+
+            QScrollBar::handle:horizontal {
+                background-color: #4A4A4A;
+                min-width: 30px;
+                border-radius: 7px;
+            }
+
+            QScrollBar::handle:horizontal:hover {
+                background-color: #5A5A5A;
+            }
+
+            QScrollBar::handle:horizontal:pressed {
+                background-color: #007ACC;
+            }
+
+            QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {
+                width: 0px;
+            }
+
+            QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal {
+                background: none;
+            }
         """)
 
         # Left Panel
@@ -296,28 +355,39 @@ class MainWindow(QMainWindow):
 
         # Right Panel
         right_panel = QVBoxLayout()  # Vertical layout for the right panel
+        right_panel.padding = 30
         right_panel.setContentsMargins(20, 20, 20, 20)
         right_panel.setSpacing(20)
 
         # Top Row Buttons
         button_layout = QHBoxLayout()  # Horizontal layout for top row buttons
-        button_layout.setSpacing(10)
         self.btn_process = QPushButton(qta.icon('fa5s.magic', color='white'), "Process OCR")
+        self.btn_process.setFixedWidth(250)
         self.btn_process.clicked.connect(self.start_ocr)
         self.btn_process.setEnabled(False)
         button_layout.addWidget(self.btn_process)
         self.btn_stop_ocr = QPushButton(qta.icon('fa5s.stop', color='white'), "Stop OCR")
+        self.btn_stop_ocr.setFixedWidth(250)
         self.btn_stop_ocr.clicked.connect(self.stop_ocr)
         self.btn_stop_ocr.setVisible(False)  # Initially disabled
         button_layout.addWidget(self.btn_stop_ocr)
+        file_button_layout = QHBoxLayout()
+        file_button_layout.setAlignment(Qt.AlignRight)
+        file_button_layout.setSpacing(20)
         self.btn_import_translation = QPushButton(qta.icon('fa5s.file-import', color='white'), "Import Translation")
+        self.btn_import_translation.setFixedWidth(250)
         self.btn_import_translation.clicked.connect(self.import_translation)
-        button_layout.addWidget(self.btn_import_translation)
+        file_button_layout.addWidget(self.btn_import_translation)
         self.btn_export_ocr = QPushButton(qta.icon('fa5s.file-export', color='white'), "Export OCR")
+        self.btn_export_ocr.setFixedWidth(250)
         self.btn_export_ocr.clicked.connect(self.export_ocr)
-        button_layout.addWidget(self.btn_export_ocr)
+        file_button_layout.addWidget(self.btn_export_ocr)
+        button_layout.addLayout(file_button_layout)
         right_panel.addLayout(button_layout)
 
+        # Replace the existing results_table addition with:
+        self.right_content_stack = QStackedWidget()
+        
         # OCR Results Table
         self.results_table = QTableWidget()
         self.results_table.setColumnCount(7)
@@ -334,7 +404,25 @@ class MainWindow(QMainWindow):
         self.results_table.setWordWrap(True)
         self.results_table.setItemDelegateForColumn(0, TextEditDelegate(self))  # Add delegate for column 0
         self.results_table.addAction(self.combine_action)
-        right_panel.addWidget(self.results_table)
+
+        # Create container for simple view
+        self.simple_view_widget = QWidget()
+        self.simple_layout = QVBoxLayout(self.simple_view_widget)
+        self.simple_layout.setContentsMargins(5, 5, 5, 5)
+        self.simple_layout.setSpacing(10)
+
+        self.simple_scroll = QScrollArea()
+        self.simple_scroll.setWidgetResizable(True)
+        self.simple_scroll_content = QWidget()
+        self.simple_scroll_layout = QVBoxLayout(self.simple_scroll_content)
+        self.simple_scroll.setWidget(self.simple_scroll_content)
+        self.simple_scroll.setStyleSheet("border: none;")
+
+        # Add both views to stack
+        self.right_content_stack.addWidget(self.simple_scroll)
+        self.right_content_stack.addWidget(self.results_table)
+
+        right_panel.addWidget(self.right_content_stack)
 
         # Modify translation button layout
         translation_btn_layout = QHBoxLayout()
@@ -346,7 +434,50 @@ class MainWindow(QMainWindow):
         self.btn_apply_translation = QPushButton(qta.icon('fa5s.check', color='white'), "Apply Translation")
         self.btn_apply_translation.clicked.connect(self.apply_translation)
         translation_btn_layout.addWidget(self.btn_apply_translation)
-        
+
+        # In the init_ui method, modify the translation_btn_layout section
+        self.advanced_mode_check = QCheckBox("Advanced Mode")
+        self.advanced_mode_check.setStyleSheet("""
+            QCheckBox {
+                color: #FFFFFF;
+                font-size: 16px;
+                spacing: 12px;
+                padding: 4px;
+            }
+            QCheckBox::indicator {
+                width: 22px;
+                height: 22px;
+                border-radius: 4px;
+            }
+            QCheckBox::indicator:unchecked {
+                border: 2px solid #3A3A3A;
+                background-color: #2A2A2A;
+            }
+            QCheckBox::indicator:unchecked:hover {
+                border: 2px solid #4A4A4A;
+                background-color: #333333;
+            }
+            QCheckBox::indicator:checked {
+                border: 2px solid #007ACC;
+                background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #0088EE, stop:1 #007ACC);
+                image: url(data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxNCIgaGVpZ2h0PSIxNCIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJub25lIiBzdHJva2U9IiNGRkZGRkYiIHN0cm9rZS13aWR0aD0iMyIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIj48cG9seWxpbmUgcG9pbnRzPSIyMCA2IDkgMTcgNCAxMiI+PC9wb2x5bGluZT48L3N2Zz4=);
+            }
+            QCheckBox::indicator:checked:hover {
+                border: 2px solid #0088EE;
+                background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #0099FF, stop:1 #0088EE);
+            }
+            QCheckBox:disabled {
+                color: #666666;
+            }
+            QCheckBox::indicator:disabled {
+                border: 2px solid #444444;
+                background-color: #333333;
+            }
+        """)
+        self.advanced_mode_check.setChecked(False)
+        self.advanced_mode_check.setCursor(Qt.PointingHandCursor)  # Changes cursor to hand when hovering
+        self.advanced_mode_check.stateChanged.connect(self.toggle_advanced_mode)
+        translation_btn_layout.addWidget(self.advanced_mode_check)
         right_panel.addLayout(translation_btn_layout)
 
         # Create the right widget and apply specific styles
@@ -583,6 +714,98 @@ class MainWindow(QMainWindow):
             # Display estimated time in the progress bar tooltip
             self.ocr_progress.setToolTip(f"Estimated time remaining: {estimated_remaining_time:.1f} seconds")
 
+    def toggle_advanced_mode(self, state):
+        if state:
+            self.update_simple_view()
+            self.right_content_stack.setCurrentIndex(1)  # Table view
+        else:
+            self.right_content_stack.setCurrentIndex(0)  # Simple view
+
+    def update_simple_view(self):
+        # Clear existing widgets properly
+        while self.simple_scroll_layout.count():
+            child = self.simple_scroll_layout.takeAt(0)
+            if child.widget():
+                child.widget().deleteLater()
+
+        # Create new editable text items with external delete buttons
+        for idx, result in enumerate(self.ocr_results):
+            # Create container widget for frame + button
+            container = QWidget()
+            container_layout = QHBoxLayout(container)
+            container_layout.setContentsMargins(5, 5, 5, 5)
+            container_layout.setSpacing(10)
+
+            # Text Frame
+            text_frame = QFrame()
+            text_frame.setStyleSheet("""
+                QFrame {
+                    background-color: #3A3A3A;
+                    border-radius: 35px;
+                    padding: 10px;
+                    margin: 0;
+                }
+            """)
+            text_layout = QVBoxLayout(text_frame)
+            text_layout.setContentsMargins(0, 0, 0, 0)
+
+            # Text Edit
+            text_edit = QTextEdit(result['text'])
+            text_edit.setStyleSheet("""
+                QTextEdit {
+                    color: white;
+                    font-size: 20px;
+                    background-color: transparent;
+                    border: 1px solid #4A4A4A;
+                    border-radius: 25px;
+                    padding: 5px;
+                }
+                QTextEdit:hover {
+                    border: 1px solid #007ACC;
+                }
+                QTextEdit:focus {
+                    border: 2px solid #007ACC;
+                }
+            """)
+            text_edit.setLineWrapMode(QTextEdit.WidgetWidth)
+            text_edit.textChanged.connect(lambda text, index=idx: self.on_simple_text_changed(index, text))
+            text_layout.addWidget(text_edit)
+
+            # Delete Button
+            delete_btn = QPushButton(qta.icon('fa5s.trash-alt', color='red'), "")
+            delete_btn.setFixedSize(100, 100)
+            delete_btn.setStyleSheet("""
+                QPushButton {
+                    background-color: #3A3A3A;
+                    border: none;
+                    border-radius: 34px;
+                }
+                QPushButton:hover {
+                    background-color: #4A4A4A;
+                }
+                QPushButton:pressed {
+                    background-color: #2A2A2A;
+                }
+            """)
+            row_number = result['row_number']
+            delete_btn.clicked.connect(lambda _, rn=row_number: self.delete_row(rn))
+
+            # Add widgets to container
+            container_layout.addWidget(text_frame, 1)  # Allow frame to expand
+            container_layout.addWidget(delete_btn)
+            
+            self.simple_scroll_layout.addWidget(container)
+        
+        self.simple_scroll_layout.addStretch()
+
+    def on_simple_text_changed(self, index, text):
+        """Update OCR results when text is edited in simple view"""
+        if 0 <= index < len(self.ocr_results):
+            self.ocr_results[index]['text'] = text
+            # If in advanced mode, refresh the table
+            if self.advanced_mode_check.isChecked():
+                self.update_results_table()
+
     def update_results_table(self):
         self.results_table.blockSignals(True)  # Block signals during update
         self.results_table.setRowCount(len(self.ocr_results))
@@ -640,6 +863,9 @@ class MainWindow(QMainWindow):
             delete_btn.clicked.connect(lambda _, r=row: self.delete_row(r))
         self.adjust_row_heights()
         self.results_table.blockSignals(False)
+        
+        if not self.advanced_mode_check.isChecked():
+            self.update_simple_view()
     
     # Modify adjust_row_heights to better handle word wrap
     def adjust_row_heights(self):
