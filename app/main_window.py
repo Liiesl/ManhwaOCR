@@ -1,5 +1,5 @@
-from PyQt5.QtWidgets import QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QSizePolicy, QFrame, QScrollArea, QStackedWidget, QCheckBox, QPushButton, QFileDialog, QLabel, QProgressBar, QTableWidget, QTableWidgetItem, QMessageBox, QSplitter, QHeaderView, QAction, QTextEdit
-from PyQt5.QtCore import Qt, pyqtSignal, QDateTime, QTimer, QSettings, QRectF, QEvent
+from PyQt5.QtWidgets import QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QSizePolicy, QDialog, QFrame, QScrollArea, QStackedWidget, QCheckBox, QPushButton, QFileDialog, QLabel, QProgressBar, QTableWidget, QTableWidgetItem, QMessageBox, QSplitter, QHeaderView, QAction, QTextEdit
+from PyQt5.QtCore import Qt, pyqtSignal, QDateTime, QTimer, QSettings, QRectF, QEvent, QDir
 from PyQt5.QtGui import QPixmap, QKeySequence, QFontMetrics, QTextOption
 import qtawesome as qta
 from core.ocr_processor import OCRProcessor
@@ -8,9 +8,8 @@ from core.data_processing import group_and_merge_text
 from app.widgets import ResizableImageLabel, CustomScrollArea, TextEditDelegate
 from utils.settings import SettingsDialog
 from core.translations import translate_with_gemini
-import easyocr
-import os
-import gc
+import easyocr, os, gc, json, zipfile, tempfile, shutil, re
+from shutil import copyfile
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -50,7 +49,10 @@ class MainWindow(QMainWindow):
 
         self.results_table.installEventFilter(self)
 
+        self.mmtl_path = None  # Add this line to track current project path
+
     def init_ui(self):
+        self.create_menu_bar()
         # Set the main widget and layout
         main_widget = QWidget()
         main_layout = QHBoxLayout()  # Main horizontal layout
@@ -250,12 +252,11 @@ class MainWindow(QMainWindow):
         self.btn_settings.clicked.connect(self.show_settings_dialog)
         settings_layout.addWidget(self.btn_settings)
 
-        self.btn_open = QPushButton(qta.icon('fa5s.folder-open', color='white'), "Open Folder")
-        self.btn_open.clicked.connect(self.open_folder)
-        settings_layout.addWidget(self.btn_open)
-
-        left_panel.addLayout(settings_layout)
-
+        self.btn_save = QPushButton(qta.icon('fa5s.save', color='white'), "Save Project")
+        self.btn_save.clicked.connect(self.save_project)
+        settings_layout.addWidget(self.btn_save)
+        left_panel.addLayout(settings_layout)       
+        
         # Progress bars in their own row
         progress_layout = QVBoxLayout()
         self.ocr_progress = QProgressBar()
@@ -516,6 +517,248 @@ class MainWindow(QMainWindow):
         main_widget.setLayout(main_layout)
         self.setCentralWidget(main_widget)
 
+    def create_menu_bar(self):
+        menu_bar = self.menuBar()
+        # Apply a dedicated style sheet to the menu bar
+        menu_bar.setStyleSheet("""
+            QMenuBar {
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #2D2D2D, stop:1 #1E1E1E);
+                padding: 5px;
+            }
+            QMenuBar::item {
+                background-color: transparent;
+                padding: 8px 16px;
+                margin: 0px 2px;
+                border-radius: 4px;
+            }
+            QMenuBar::item:selected {
+                background-color: #4A4A4A;
+                color: #FFFFFF;
+            }
+        """)
+
+        # File menu
+        file_menu = menu_bar.addMenu("File")
+        file_menu.setStyleSheet("""
+            QMenu {
+                background-color: #3A3A3A;
+                color: #FFFFFF;
+                border: none;
+                border-radius: 4px;
+            }
+            QMenu::item {
+                padding: 8px 16px;
+                border-radius: 4px;
+            }
+            QMenu::item:selected {
+                background-color: #4A4A4A;
+            }
+        """)
+        
+        # File menu actions with icons and shortcuts
+        file_menu_action = file_menu.menuAction()
+        file_menu_action.setIcon(qta.icon('fa5s.file', color="white"))
+
+        new_project_action = QAction(qta.icon('fa5s.file-alt', color="white"), "New Project", self)
+        new_project_action.setShortcut("Ctrl+N")
+        new_project_action.triggered.connect(self.new_project)
+        file_menu.addAction(new_project_action)
+        
+        open_project_action = QAction(qta.icon('fa5s.folder-open', color="white"), "Open Project", self)
+        open_project_action.setShortcut("Ctrl+O")
+        open_project_action.triggered.connect(self.open_project)
+        file_menu.addAction(open_project_action)
+
+        import_wfwf_action = QAction(qta.icon('fa5s.file-import', color="white"), "Import from WFWF", self)
+        import_wfwf_action.triggered.connect(self.import_from_wfwf)
+        file_menu.addAction(import_wfwf_action)
+
+        file_menu.addSeparator()
+        
+        save_action = QAction(qta.icon('fa5s.save', color="white"), "Save Project", self)
+        save_action.setShortcut("Ctrl+S")
+        save_action.triggered.connect(self.save_project)
+        file_menu.addAction(save_action)
+        
+        save_as_action = QAction(qta.icon('fa5s.download', color="white"), "Save Project As...", self)
+        save_as_action.setShortcut("Ctrl+Shift+S")
+        save_as_action.triggered.connect(self.save_project_as)
+        file_menu.addAction(save_as_action)
+        
+        file_menu.addSeparator()
+        
+        home_action = QAction(qta.icon('fa5s.home', color="white"), "Go to Home", self)
+        home_action.triggered.connect(self.go_to_home)
+        file_menu.addAction(home_action)
+
+
+    def new_project(self):
+        from main import NewProjectDialog  # Import needed dialog
+        dialog = NewProjectDialog(self)
+        if dialog.exec_() == QDialog.Accepted:
+            source_path, project_path = dialog.get_paths()
+            if not source_path or not project_path:
+                QMessageBox.warning(self, "Error", "Please select both source and project location")
+                return
+            
+            try:
+                with zipfile.ZipFile(project_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
+                    meta = {
+                        'created': QDateTime.currentDateTime().toString(Qt.ISODate),
+                        'source': source_path,
+                        'version': '1.0'
+                    }
+                    zipf.writestr('meta.json', json.dumps(meta, indent=2))
+                    images_dir = 'images/'
+                    if os.path.isfile(source_path):
+                        zipf.write(source_path, images_dir + os.path.basename(source_path))
+                    elif os.path.isdir(source_path):
+                        for file in os.listdir(source_path):
+                            if file.lower().endswith(('png', 'jpg', 'jpeg')):
+                                zipf.write(os.path.join(source_path, file), images_dir + file)
+                    zipf.writestr('master.json', json.dumps([]))
+                self.load_project(project_path)
+            except Exception as e:
+                QMessageBox.critical(self, "Error", f"Failed to create project: {str(e)}")
+
+    def open_project(self):
+        file, _ = QFileDialog.getOpenFileName(self, "Open Project", "", "Manga Translation Files (*.mmtl)")
+        if file:
+            self.load_project(file)
+
+    def load_project(self, mmtl_path):
+        temp_dir = tempfile.mkdtemp()
+        with zipfile.ZipFile(mmtl_path, 'r') as zipf:
+            zipf.extractall(temp_dir)
+        
+        if not all(os.path.exists(os.path.join(temp_dir, p)) for p in ['meta.json', 'master.json', 'images/']):
+            QMessageBox.critical(self, "Error", "Invalid .mmtl file")
+            return
+        
+        # Clean previous project
+        if hasattr(self, 'temp_dir'):
+            import shutil
+            shutil.rmtree(self.temp_dir, ignore_errors=True)
+        
+        self.mmtl_path = mmtl_path
+        self.temp_dir = temp_dir
+        self.process_mmtl(mmtl_path, temp_dir)
+
+    def import_from_wfwf(self):
+        from main import ImportWFWFDialog  # Import needed dialog
+        dialog = ImportWFWFDialog(self)
+        if dialog.exec_() == QDialog.Accepted:
+            temp_dir = dialog.get_temp_dir()
+            if temp_dir and os.path.exists(temp_dir):
+                self.create_project_from_wfwf(temp_dir, dialog.get_url())
+
+    def create_project_from_wfwf(self, temp_dir, url):
+        project_path, _ = QFileDialog.getSaveFileName(
+            self, "Save Project", QDir.homePath(), "Manga Translation Files (*.mmtl)"
+        )
+        if project_path:
+            try:
+                filename_map = self.correct_filenames(temp_dir)
+                corrected_dir = tempfile.mkdtemp()
+                for old_name, new_name in filename_map.items():
+                    src = os.path.join(temp_dir, old_name)
+                    dst = os.path.join(corrected_dir, new_name)
+                    copyfile(src, dst)
+                with zipfile.ZipFile(project_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
+                    meta = {
+                        'created': QDateTime.currentDateTime().toString(Qt.ISODate),
+                        'source': url,
+                        'version': '1.0'
+                    }
+                    zipf.writestr('meta.json', json.dumps(meta, indent=2))
+                    images_dir = 'images/'
+                    for img in os.listdir(corrected_dir):
+                        if img.lower().endswith(('png', 'jpg', 'jpeg')):
+                            zipf.write(os.path.join(corrected_dir, img), os.path.join(images_dir, img))
+                    zipf.writestr('master.json', json.dumps([]))
+                self.load_project(project_path)
+            except Exception as e:
+                QMessageBox.critical(self, "Error", f"Failed to create project: {str(e)}")
+            finally:
+                shutil.rmtree(temp_dir)
+                shutil.rmtree(corrected_dir)
+
+    def go_to_home(self):
+        from main import Home
+        self.home = Home()
+        self.home.show()
+        self.close()
+
+    def correct_filenames(self, directory):
+        """
+        Apply number correction to filenames in the directory.
+        Returns a dict mapping original filenames to corrected ones.
+        """
+        # Get all files in the directory
+        files = os.listdir(directory)
+        filename_map = {}
+        
+        # Dictionaries to track maximum suffix lengths for both formats
+        parentheses_lengths = []
+        direct_suffix_lengths = []
+        
+        # First pass: determine maximum numeric suffix lengths for both formats
+        for filename in files:
+            base, ext = os.path.splitext(filename)
+            
+            # Check for numbers in parentheses: "filename (123).ext"
+            parentheses_match = re.match(r'^(.*?)\s*\((\d+)\)$', base)
+            if parentheses_match:
+                num_str = parentheses_match.group(2)
+                parentheses_lengths.append(len(num_str))
+                continue
+            
+            # Check for direct numeric suffixes: "filename123.ext"
+            direct_match = re.match(r'^(.*?)(\d+)$', base)
+            if direct_match:
+                num_str = direct_match.group(2)
+                direct_suffix_lengths.append(len(num_str))
+        
+        # Determine maximum lengths (if any files were found)
+        max_parentheses_length = max(parentheses_lengths) if parentheses_lengths else 0
+        max_direct_length = max(direct_suffix_lengths) if direct_suffix_lengths else 0
+        
+        # No files with numeric suffixes found
+        if max_parentheses_length == 0 and max_direct_length == 0:
+            return {filename: filename for filename in files}
+        
+        # Second pass: rename files with padded numbers
+        for filename in files:
+            base, ext = os.path.splitext(filename)
+            new_filename = filename  # Default to no change
+            
+            # Handle numbers in parentheses: "filename (123).ext"
+            parentheses_match = re.match(r'^(.*?)\s*\((\d+)\)$', base)
+            if parentheses_match and max_parentheses_length > 0:
+                base_part = parentheses_match.group(1).rstrip()  # Remove trailing space
+                num_str = parentheses_match.group(2)
+                padded_num = num_str.zfill(max_parentheses_length)
+                new_base = f"{base_part} ({padded_num})"
+                new_filename = f"{new_base}{ext}"
+            
+            # Handle direct numeric suffixes: "filename123.ext"
+            direct_match = re.match(r'^(.*?)(\d+)$', base)
+            if direct_match and max_direct_length > 0:
+                base_part = direct_match.group(1)
+                num_str = direct_match.group(2)
+                padded_num = num_str.zfill(max_direct_length)
+                new_base = f"{base_part}{padded_num}"
+                new_filename = f"{new_base}{ext}"
+            
+            if new_filename != filename:
+                # Record the mapping but don't rename yet to avoid conflicts
+                filename_map[filename] = new_filename
+            else:
+                filename_map[filename] = filename
+                
+        return filename_map
+
+
     def show_settings_dialog(self):
         dialog = SettingsDialog(self)
         if dialog.exec_():
@@ -524,15 +767,22 @@ class MainWindow(QMainWindow):
             self.min_text_area = int(self.settings.value("min_text_area", 4000))
             self.distance_threshold = int(self.settings.value("distance_threshold", 100))
 
-    def open_folder(self):
-        folder = QFileDialog.getExistingDirectory(self, "Select Image Folder")
-        if folder:
-            self.process_folder(folder)
-
-    # Update process_folder method
-    def process_folder(self, folder):
-        self.image_paths = sorted([os.path.join(folder, f) for f in os.listdir(folder) 
-                        if f.lower().endswith(('png', 'jpg', 'jpeg'))])
+    def process_mmtl(self, mmtl_path, temp_dir):
+        self.mmtl_path = mmtl_path
+        self.temp_dir = temp_dir
+        self.image_paths = sorted([
+            os.path.join(temp_dir, 'images', f) 
+            for f in os.listdir(os.path.join(temp_dir, 'images'))
+            if f.lower().endswith(('png', 'jpg', 'jpeg'))
+        ])
+        
+        # Load existing OCR results (only if master.json exists)
+        master_path = os.path.join(temp_dir, 'master.json')
+        if os.path.exists(master_path):
+            with open(master_path, 'r') as f:
+                self.ocr_results = json.load(f)  # Overwrite with saved data
+        
+        # No else-clause needed - retain existing initialization from __init__
         
         if not self.image_paths:
             QMessageBox.warning(self, "Error", "No images found in selected folder")
@@ -552,8 +802,11 @@ class MainWindow(QMainWindow):
             pixmap = QPixmap(image_path)
             filename = os.path.basename(image_path)
             label = ResizableImageLabel(pixmap, filename)
-            label.textBoxDeleted.connect(self.delete_row)  # Connect signal
+            label.textBoxDeleted.connect(self.delete_row)
             self.scroll_layout.addWidget(label)
+
+        # Update UI components immediately
+        self.update_results_table()  # <-- Add this line
 
     def start_ocr(self):
         if not self.image_paths:
@@ -1226,6 +1479,45 @@ class MainWindow(QMainWindow):
                 QMessageBox.critical(self, "Error", "Export failed")
         finally:
             shutil.rmtree(temp_dir, ignore_errors=True)
+
+    def save_project(self):
+        # Update master.json in temp dir (save as list directly, not wrapped in 'ocr_results' key)
+        with open(os.path.join(self.temp_dir, 'master.json'), 'w') as f:
+            json.dump(self.ocr_results, f, indent=2)  # Directly dump the list
+            
+        # Repackage the .mmtl file
+        with zipfile.ZipFile(self.mmtl_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
+            for root, dirs, files in os.walk(self.temp_dir):
+                for file in files:
+                    full_path = os.path.join(root, file)
+                    rel_path = os.path.relpath(full_path, self.temp_dir)
+                    zipf.write(full_path, rel_path)
+                    
+        QMessageBox.information(self, "Saved", "Project saved successfully")
+
+    def save_project_as(self):
+        """Handle Save As functionality"""
+        options = QFileDialog.Options()
+        file_path, _ = QFileDialog.getSaveFileName(
+            self, 
+            "Save Project As", 
+            "", 
+            "Manga Translation Project (*.mmtl)", 
+            options=options
+        )
+        
+        if file_path:
+            if not file_path.endswith('.mmtl'):
+                file_path += '.mmtl'
+            self.mmtl_path = file_path
+            self.save_project()  # Reuse existing save logic with new path
+
+    def closeEvent(self, event):
+        # Clean up temp directory
+        if os.path.exists(self.temp_dir):
+            import shutil
+            shutil.rmtree(self.temp_dir)
+        super().closeEvent(event)
 
     def handle_error(self, message):
         print(f"Error occurred: {message}")
