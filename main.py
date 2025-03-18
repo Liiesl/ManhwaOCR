@@ -1,6 +1,6 @@
 import sys
-from PyQt5.QtWidgets import (QApplication, QWidget, QVBoxLayout, QPushButton, QProgressBar,
-                            QLabel, QListWidget, QMessageBox, QLineEdit, QFileDialog, QStatusBar,
+from PyQt5.QtWidgets import (QApplication, QWidget, QVBoxLayout, QPushButton, QProgressBar, QFrame, QMainWindow,
+                            QLabel, QListWidget, QMessageBox, QLineEdit, QFileDialog, QStatusBar, QScrollArea,
                             QListWidgetItem, QHBoxLayout, QGridLayout, QDialog, QDialogButtonBox, QComboBox)
 from PyQt5.QtCore import Qt, QSettings, QDateTime, QDir, QThread, pyqtSignal
 from PyQt5.QtGui import QFont
@@ -350,8 +350,121 @@ class NewProjectDialog(QDialog):
     
     def get_paths(self):
         return self.edit_source.text(), self.edit_project.text(), self.language_combo.currentText()
+
+# Keep your existing ImportWFWFDialog and NewProjectDialog classes as they are
+class ProjectItemWidget(QFrame):
+    """Custom widget for displaying a single project item"""
+    def __init__(self, name, path, last_opened="", main_window=None):
+        super().__init__()
+        self.path = path
+        self.main_window = main_window  # Store reference to the main window
+        self.setObjectName("projectItem")
+        self.setStyleSheet("""
+            #projectItem {
+                background-color: none;
+                border-radius: 0px;
+                padding: 10px;
+            }
+            #projectItem:hover {
+                background-color: #3a3a3a;
+            }
+        """)
+        
+        # Layout
+        self.layout = QHBoxLayout(self)
+        self.layout.setContentsMargins(10, 8, 10, 8)
+        
+        # Project name
+        self.name_label = QLabel(name)
+        self.name_label.setStyleSheet("font-size: 14px;")
+        
+        # Last opened
+        self.last_opened_label = QLabel(last_opened if last_opened else name)
+        self.last_opened_label.setStyleSheet("font-size: 14px;")
+        
+        # Add widgets to layout
+        self.layout.addWidget(self.name_label)
+        self.layout.addStretch()
+        self.layout.addWidget(self.last_opened_label)
+        
+        # Make the widget clickable
+        self.setCursor(Qt.PointingHandCursor)
+        
+    def mouseDoubleClickEvent(self, event):
+        if event.button() == Qt.LeftButton:
+            window = self.window()
+            if isinstance(window, Home):
+                window.open_project_from_path(self.path)
+        super().mouseDoubleClickEvent(event)  # Call superclass implementation
+
+class ProjectsListWidget(QWidget):
+    """Custom widget for displaying a list of projects"""
+    def __init__(self):
+        super().__init__()
+        
+        # Main layout
+        self.layout = QVBoxLayout(self)
+        self.layout.setContentsMargins(0, 0, 0, 0)
+        self.layout.setSpacing(0)  # Reduced spacing
+        
+        # Header
+        self.header = QWidget()
+        self.header.setStyleSheet("padding: 10px; background-color: #3E3E3E; border-top-right-radius: 15px; border-top-left-radius: 15px;")  # Darker header
+        self.header_layout = QHBoxLayout(self.header)
+        self.header_layout.setContentsMargins(10, 10, 10, 10)
+        
+        self.name_header = QLabel("Name")
+        self.name_header.setStyleSheet("font-weight: bold; color: #cccccc;")
+        
+        self.last_opened_header = QLabel("Project Path")
+        self.last_opened_header.setStyleSheet("font-weight: bold; color: #cccccc;")
+        
+        self.header_layout.addWidget(self.name_header)
+        self.header_layout.addStretch()
+        self.header_layout.addWidget(self.last_opened_header)
+        
+        # Add header to main layout
+        self.layout.addWidget(self.header)
+        
+        # Create scroll area for projects
+        self.scroll_area = QScrollArea()
+        self.scroll_area.setWidgetResizable(True)
+        self.scroll_area.setFrameShape(QFrame.NoFrame)
+        self.scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        
+        # Container for project items
+        self.projects_container = QWidget()
+        self.projects_container.setStyleSheet("background-color: #2B2B2B;")  # Add background color to container
+        self.projects_layout = QVBoxLayout(self.projects_container)
+        self.projects_layout.setContentsMargins(0, 0, 0, 0)
+        self.projects_layout.setSpacing(1)  # Minimal spacing between projects
+        
+        # Add projects at the top, with stretch at the bottom
+        self.projects_layout.addStretch()
+        
+        # Set container as scroll area widget
+        self.scroll_area.setWidget(self.projects_container)
+        
+        # Add scroll area to main layout and make it take up all available space
+        self.layout.addWidget(self.scroll_area, 1)  # Add stretch factor of 1
+        
+    def add_project(self, name, path, last_opened=""):
+        """Add a project to the list"""
+        project_item = ProjectItemWidget(name, path, last_opened)
+        # Insert before the stretch
+        self.projects_layout.insertWidget(self.projects_layout.count() - 1, project_item)
+        return project_item
     
-class Home(QWidget):
+    def clear(self):
+        """Clear all projects from the list"""
+        # Remove all widgets except the stretch at the end
+        while self.projects_layout.count() > 1:
+            item = self.projects_layout.itemAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+            self.projects_layout.removeItem(item)
+
+class Home(QMainWindow):
     def __init__(self):
         super().__init__()
         self.settings = QSettings("YourCompany", "MangaOCRTool")
@@ -359,79 +472,125 @@ class Home(QWidget):
         
     def init_ui(self):
         self.setWindowTitle("Manga OCR Tool")
-        self.setGeometry(100, 100, 800, 600)
+        self.setMinimumSize(800, 600)
         
-        main_layout = QHBoxLayout()
-        self.setLayout(main_layout)
-
-        left_layout = QVBoxLayout()
-
+        # Set the dark theme
+        self.setStyleSheet("""
+            QMainWindow, QWidget {
+                background-color: #1a1a1a;
+                color: white;
+            }
+            QPushButton {
+                background-color: #3E3E3E;
+                color: white;
+                border-radius: 15px;
+                padding: 10px 15px;
+                border: none;
+                font-size: 14px;
+            }
+            QPushButton:hover {
+                background-color: #4f4f4f;
+            }
+            QScrollArea {
+                background-color: transparent;
+                border: none;
+            }
+            QScrollBar:vertical {
+                background: #1a1a1a;
+                width: 10px;
+                margin: 0px;
+            }
+            QScrollBar::handle:vertical {
+                background: #444444;
+                min-height: 20px;
+                border-radius: 5px;
+            }
+            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
+                height: 0px;
+            }
+        """)
+        
+        # Create central widget
+        self.central_widget = QWidget()
+        self.setCentralWidget(self.central_widget)
+        
+        # Main layout
+        self.main_layout = QHBoxLayout(self.central_widget)
+        self.main_layout.setContentsMargins(10, 10, 10, 10)
+    
+        self.left_layout_layout = QVBoxLayout()
+        self.left_layout_layout.setContentsMargins(10, 10, 10, 10)
+        self.left_layout_layout.setSpacing(15)  # More spacing between buttons
+        
+        # Left layout buttons
         self.btn_new = QPushButton("New Project")
-        self.btn_open = QPushButton("Open Project")
         self.btn_import = QPushButton("Import from WFWF")
+        self.btn_open = QPushButton("Open Project")
         
-        for btn in [self.btn_new, self.btn_open, self.btn_import]:
-            btn.setFixedHeight(50)
-            left_layout.addWidget(btn)
-        
+        self.left_layout_layout.addWidget(self.btn_new)
+        self.left_layout_layout.addWidget(self.btn_import)
+        self.left_layout_layout.addWidget(self.btn_open)
+        self.left_layout_layout.addStretch()
+
+        # Connect button signals
         self.btn_new.clicked.connect(self.new_project)
         self.btn_open.clicked.connect(self.open_project)
         self.btn_import.clicked.connect(self.import_from_wfwf)
 
-        right_layout = QVBoxLayout()
-        
-        recent_label = QLabel("Recent Projects:")
-        recent_label.setFont(QFont("Arial", 12, QFont.Bold))
-        right_layout.addWidget(recent_label)
-        
-        self.recent_list = QListWidget()
-        self.recent_list.itemDoubleClicked.connect(self.open_recent_project)
-        right_layout.addWidget(self.recent_list)
-        
-        main_layout.addLayout(left_layout, 1)
-        main_layout.addLayout(right_layout, 3)
-        
-        self.load_recent_projects()
-        
-        # Styling
-        self.setStyleSheet("""
+        # Left sidebar
+        self.left_layout = QWidget()
+        self.left_layout.setLayout(self.left_layout_layout)
+        self.left_layout.setMaximumWidth(200)
+        self.left_layout.setStyleSheet("""
             QWidget {
-                background-color: #2D2D2D;
-                color: #FFFFFF;
+                background-color: #2B2B2B;
+                padding: 20px;
+                border: none;
+                border-top-right-radius: 20px;
             }
             QPushButton {
-                background-color: #3A3A3A;
-                border-radius: 5px;
-                padding: 10px;
-                font-size: 16px;
-                margin: 5px;
+                background-color: #3E3E3E;
+                color: white;
+                border-radius: 15px;
+                padding: 10px 15px;
+                border: none;
+                font-size: 14px;
+                min-height: 40px;
             }
             QPushButton:hover {
-                background-color: #4A4A4A;
-            }
-            QListWidget {
-                background-color: #3A3A3A;
-                border-radius: 5px;
-                padding: 5px;
-                font-size: 14px;
-            }
-            QLabel {
-                padding: 5px;
-                color: #CCCCCC;
+                background-color: #4f4f4f;
             }
         """)
+        
+        # Right content area
+        self.content = QWidget()
+        self.content_layout = QVBoxLayout(self.content)
+        
+        # Recent Projects header
+        self.recent_label = QLabel("Recent Projects")
+        self.recent_label.setStyleSheet("font-size: 24px; margin-bottom: 20px;")
+        self.content_layout.addWidget(self.recent_label)
+        
+        # Projects list custom widget
+        self.projects_list = ProjectsListWidget()
+        self.content_layout.addWidget(self.projects_list)
+        
+        # Add widgets to main layout
+        self.main_layout.addWidget(self.left_layout)
+        self.main_layout.addWidget(self.content, 1)
+        
+        # Load recent projects
+        self.load_recent_projects()
 
     def load_recent_projects(self):
         recent = self.settings.value("recent_projects", [])
-        self.recent_list.clear()
+        self.projects_list.clear()
         for path in recent:
             if os.path.exists(path):
-                item = QListWidgetItem(os.path.basename(path))
-                item.setData(Qt.UserRole, path)
-                self.recent_list.addItem(item)
+                filename = os.path.basename(path)
+                self.projects_list.add_project(filename, path)
 
-    def open_recent_project(self, item):
-        path = item.data(Qt.UserRole)
+    def open_project_from_path(self, path):
         if os.path.exists(path):
             self.launch_main_app(path)
         else:
@@ -440,7 +599,7 @@ class Home(QWidget):
     def new_project(self):
         dialog = NewProjectDialog(self)
         if dialog.exec_() == QDialog.Accepted:
-            source_path, project_path, language = dialog.get_paths()  # Get language
+            source_path, project_path, language = dialog.get_paths()
             
             if not source_path or not project_path:
                 QMessageBox.warning(self, "Error", "Please select both source and project location")
@@ -453,7 +612,7 @@ class Home(QWidget):
                     meta = {
                         'created': QDateTime.currentDateTime().toString(Qt.ISODate),
                         'source': source_path,
-                        'original_language': language,  # Added field
+                        'original_language': language,
                         'version': '1.0'
                     }
                     zipf.writestr('meta.json', json.dumps(meta, indent=2))
@@ -480,6 +639,59 @@ class Home(QWidget):
         file, _ = QFileDialog.getOpenFileName(self, "Open Project", "", "Manga Translation Files (*.mmtl)")
         if file:
             self.launch_main_app(file)
+
+    def import_from_wfwf(self):
+        dialog = ImportWFWFDialog(self)
+        if dialog.exec_() == QDialog.Accepted:
+            temp_dir = dialog.get_temp_dir()
+            if not temp_dir or not os.path.exists(temp_dir):
+                QMessageBox.warning(self, "Error", "No downloaded images found.")
+                return
+            
+            project_path, _ = QFileDialog.getSaveFileName(
+                self, "Save Project", QDir.homePath(), "Manga Translation Files (*.mmtl)"
+            )
+            
+            if not project_path:
+                rmtree(temp_dir)
+                return
+            
+            try:
+                # Run number correction on downloaded files
+                filename_map = self.correct_filenames(temp_dir)
+                
+                # Create a temporary directory for corrected filenames
+                corrected_dir = tempfile.mkdtemp()
+                
+                # Copy files with corrected names
+                for old_name, new_name in filename_map.items():
+                    if old_name.lower().endswith(('png', 'jpg', 'jpeg')):
+                        src = os.path.join(temp_dir, old_name)
+                        dst = os.path.join(corrected_dir, new_name)
+                        copyfile(src, dst)
+                
+                with zipfile.ZipFile(project_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
+                    meta = {
+                        'created': QDateTime.currentDateTime().toString(Qt.ISODate),
+                        'source': dialog.get_url(),
+                        'version': '1.0'
+                    }
+                    zipf.writestr('meta.json', json.dumps(meta, indent=2))
+                    
+                    images_dir = 'images/'
+                    for img in os.listdir(corrected_dir):
+                        if img.lower().endswith(('png', 'jpg', 'jpeg')):
+                            zipf.write(os.path.join(corrected_dir, img), os.path.join(images_dir, img))
+                    
+                    zipf.writestr('master.json', json.dumps([]))
+                
+                self.launch_main_app(project_path)
+            except Exception as e:
+                QMessageBox.critical(self, "Error", f"Failed to create project: {str(e)}")
+            finally:
+                rmtree(temp_dir)
+                if 'corrected_dir' in locals() and os.path.exists(corrected_dir):
+                    rmtree(corrected_dir)
 
     def correct_filenames(self, directory):
         """
@@ -550,99 +762,12 @@ class Home(QWidget):
                 
         return filename_map
 
-    def import_from_wfwf(self):
-        dialog = ImportWFWFDialog(self)
-        if dialog.exec_() == QDialog.Accepted:
-            temp_dir = dialog.get_temp_dir()
-            if not temp_dir or not os.path.exists(temp_dir):
-                QMessageBox.warning(self, "Error", "No downloaded images found.")
-                return
-            
-            project_path, _ = QFileDialog.getSaveFileName(
-                self, "Save Project", QDir.homePath(), "Manga Translation Files (*.mmtl)"
-            )
-            
-            if not project_path:
-                rmtree(temp_dir)
-                return
-            
-            try:
-                # Run number correction on downloaded files
-                filename_map = self.correct_filenames(temp_dir)
-                
-                # Create a temporary directory for corrected filenames
-                corrected_dir = tempfile.mkdtemp()
-                
-                # Copy files with corrected names
-                for old_name, new_name in filename_map.items():
-                    if old_name.lower().endswith(('png', 'jpg', 'jpeg')):
-                        src = os.path.join(temp_dir, old_name)
-                        dst = os.path.join(corrected_dir, new_name)
-                        copyfile(src, dst)
-                
-                with zipfile.ZipFile(project_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
-                    meta = {
-                        'created': QDateTime.currentDateTime().toString(Qt.ISODate),
-                        'source': dialog.get_url(),
-                        'version': '1.0'
-                    }
-                    zipf.writestr('meta.json', json.dumps(meta, indent=2))
-                    
-                    images_dir = 'images/'
-                    for img in os.listdir(corrected_dir):
-                        if img.lower().endswith(('png', 'jpg', 'jpeg')):
-                            zipf.write(os.path.join(corrected_dir, img), os.path.join(images_dir, img))
-                    
-                    zipf.writestr('master.json', json.dumps([]))
-                
-                self.launch_main_app(project_path)
-            except Exception as e:
-                QMessageBox.critical(self, "Error", f"Failed to create project: {str(e)}")
-            finally:
-                rmtree(temp_dir)
-                if 'corrected_dir' in locals() and os.path.exists(corrected_dir):
-                    rmtree(corrected_dir)
-
-    def create_mmtl(self, folder, target_path):
-        # Create ZIP structure
-        with zipfile.ZipFile(target_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
-            # Create meta.json
-            meta = {
-                'created': QDateTime.currentDateTime().toString(Qt.ISODate),
-                'version': '1.0',
-                'settings': dict(self.settings.allKeys())
-            }
-            zipf.writestr('meta.json', json.dumps(meta, indent=2))
-            
-            # Copy images
-            image_files = [f for f in os.listdir(folder) if f.lower().endswith(('png', 'jpg', 'jpeg'))]
-            for img in image_files:
-                src = os.path.join(folder, img)
-                zipf.write(src, os.path.join('images', img))
-                
-            # Create empty master.json
-            zipf.writestr('master.json', json.dumps([]))  # Directly write an empty list
-            
-    def open_mmtl(self, file_path):
-        # Extract to temp directory
-        temp_dir = tempfile.mkdtemp()
-        with zipfile.ZipFile(file_path, 'r') as zipf:
-            zipf.extractall(temp_dir)
-            
-        # Verify structure
-        required = ['meta.json', 'master.json', 'images/']
-        if not all(os.path.exists(os.path.join(temp_dir, p)) for p in required):
-            QMessageBox.critical(self, "Error", "Invalid .mmtl file")
-            return None
-            
-        return temp_dir
-    
-    def update_recent_projects(self, folder):
+    def update_recent_projects(self, project_path):
         recent = self.settings.value("recent_projects", [])
-        if folder in recent:
-            recent.remove(folder)
-        recent.insert(0, folder)
-        recent = list(dict.fromkeys(recent))[:5]  # Keep unique, last 5
+        if project_path in recent:
+            recent.remove(project_path)
+        recent.insert(0, project_path)
+        recent = recent[:5]  # Keep only last 5
         self.settings.setValue("recent_projects", recent)
 
     def launch_main_app(self, mmtl_path):
