@@ -365,7 +365,6 @@ class ResizableImageLabel(QGraphicsView):
         return int((self.original_pixmap.height() / self.original_pixmap.width()) * width)
 
     def resizeEvent(self, event):
-        print(f"DEBUG: ResizableImageLabel.resizeEvent called. Old size: {event.oldSize()}, New size: {event.size()}")
         super().resizeEvent(event)
         
         # Use Qt's single shot timer to defer the fitInView call 
@@ -380,12 +379,17 @@ class ResizableImageLabel(QGraphicsView):
     def apply_translation(self, text_entries):
         # Clear existing text boxes safely
         for text_box in self.text_boxes[:]:  # Iterate over a copy
-            text_box.signals.rowDeleted.disconnect()
-            text_box.cleanup()
-            self.scene().removeItem(text_box)
-            self.text_boxes.remove(text_box)
-        
-        # Force garbage collection
+            try:
+                text_box.signals.rowDeleted.disconnect()  # Disconnect signals
+            except (TypeError, RuntimeError):
+                pass  # Already disconnected or object deleted
+            text_box.cleanup()  # Call cleanup to remove child items
+            self.scene().removeItem(text_box)  # Remove from the scene
+            self.text_boxes.remove(text_box)  # Remove from the list
+
+        self.text_boxes.clear()  # Ensure the list is emptied
+
+        # Force garbage collection to clean up deleted objects
         import gc
         gc.collect()
 
