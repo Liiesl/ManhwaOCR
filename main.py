@@ -1,7 +1,7 @@
 import sys
 from PyQt5.QtWidgets import (QApplication, QWidget, QVBoxLayout, QPushButton, QProgressBar,
                             QLabel, QListWidget, QMessageBox, QLineEdit, QFileDialog, QStatusBar,
-                            QListWidgetItem, QHBoxLayout, QGridLayout, QDialog, QDialogButtonBox)
+                            QListWidgetItem, QHBoxLayout, QGridLayout, QDialog, QDialogButtonBox, QComboBox)
 from PyQt5.QtCore import Qt, QSettings, QDateTime, QDir, QThread, pyqtSignal
 from PyQt5.QtGui import QFont
 import os
@@ -233,7 +233,7 @@ class NewProjectDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle("New Project")
-        self.setMinimumSize(600, 200)
+        self.setMinimumSize(600, 250)  # Increased height
         
         layout = QVBoxLayout()
         self.setLayout(layout)
@@ -251,6 +251,13 @@ class NewProjectDialog(QDialog):
         source_layout.addWidget(self.edit_source)
         source_layout.addWidget(self.btn_choose_image)
         source_layout.addWidget(self.btn_choose_folder)
+        
+        # Language selection
+        language_layout = QHBoxLayout()
+        self.language_combo = QComboBox()
+        self.language_combo.addItems(["Korean", "Chinese", "Japanese"])
+        language_layout.addWidget(QLabel("Original Language:"))
+        language_layout.addWidget(self.language_combo)
         
         # Project location
         project_layout = QHBoxLayout()
@@ -275,6 +282,7 @@ class NewProjectDialog(QDialog):
         # Add to main layout
         layout.addWidget(QLabel("Source:"))
         layout.addLayout(source_layout)
+        layout.addLayout(language_layout)  # Add language selection
         layout.addWidget(QLabel("Project Location:"))
         layout.addLayout(project_layout)
         layout.addWidget(self.button_box)
@@ -308,6 +316,21 @@ class NewProjectDialog(QDialog):
                 margin-top: 10px;
                 color: #CCCCCC;
             }
+            QComboBox {
+                background-color: #3A3A3A;
+                color: #FFFFFF;
+                padding: 5px;
+                border: 1px solid #4A4A4A;
+                border-radius: 4px;
+            }
+            QComboBox::drop-down {
+                border: none;
+            }
+            QComboBox QAbstractItemView {
+                background-color: #3A3A3A;
+                color: #FFFFFF;
+                selection-background-color: #5A5A5A;
+            }
         """)
     
     def choose_image(self):
@@ -326,7 +349,7 @@ class NewProjectDialog(QDialog):
             self.edit_project.setText(file)
     
     def get_paths(self):
-        return self.edit_source.text(), self.edit_project.text()
+        return self.edit_source.text(), self.edit_project.text(), self.language_combo.currentText()
     
 class Home(QWidget):
     def __init__(self):
@@ -417,7 +440,7 @@ class Home(QWidget):
     def new_project(self):
         dialog = NewProjectDialog(self)
         if dialog.exec_() == QDialog.Accepted:
-            source_path, project_path = dialog.get_paths()
+            source_path, project_path, language = dialog.get_paths()  # Get language
             
             if not source_path or not project_path:
                 QMessageBox.warning(self, "Error", "Please select both source and project location")
@@ -430,6 +453,7 @@ class Home(QWidget):
                     meta = {
                         'created': QDateTime.currentDateTime().toString(Qt.ISODate),
                         'source': source_path,
+                        'original_language': language,  # Added field
                         'version': '1.0'
                     }
                     zipf.writestr('meta.json', json.dumps(meta, indent=2))

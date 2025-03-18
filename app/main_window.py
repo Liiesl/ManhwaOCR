@@ -5,7 +5,7 @@ import qtawesome as qta
 from core.ocr_processor import OCRProcessor
 from utils.file_io import export_ocr_results, import_translation_file
 from core.data_processing import group_and_merge_text
-from app.widgets import ResizableImageLabel, CustomScrollArea, TextEditDelegate
+from app.widgets import ResizableImageLabel, CustomScrollArea, TextEditDelegate, MenuBar
 from utils.settings import SettingsDialog
 from core.translations import translate_with_gemini
 import easyocr, os, gc, json, zipfile, tempfile, shutil, re
@@ -14,7 +14,7 @@ from shutil import copyfile
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Manga OCR Tool")
+        self.setWindowTitle("Manhwa OCR Tool")
         self.setGeometry(100, 100, 1200, 600)
         self.settings = QSettings("YourCompany", "MangaOCRTool")
         self.min_text_area = int(self.settings.value("min_text_area", 4000))
@@ -22,7 +22,13 @@ class MainWindow(QMainWindow):
         self.combine_action = QAction("Combine Rows", self)
         self.combine_action.triggered.connect(self.combine_selected_rows)
         self.update_shortcut()
-        
+        self.language_map = {
+            "Korean": "ko",
+            "Chinese": "ch_sim",
+            "Japanese": "ja"
+        }
+        self.original_language = "Korean"
+
         self.init_ui()
         self.current_image = None
         self.ocr_results = []
@@ -52,10 +58,11 @@ class MainWindow(QMainWindow):
         self.mmtl_path = None  # Add this line to track current project path
 
     def init_ui(self):
-        self.create_menu_bar()
+        self.menuBar = MenuBar(self)  # From new file
+        self.setMenuBar(self.menuBar)
         # Set the main widget and layout
         main_widget = QWidget()
-        main_layout = QHBoxLayout()  # Main horizontal layout
+        main_layout = QHBoxLayout()  # Main horizontal layou
 
         self.colors = {
         "background": "#1E1E1E",
@@ -517,248 +524,6 @@ class MainWindow(QMainWindow):
         main_widget.setLayout(main_layout)
         self.setCentralWidget(main_widget)
 
-    def create_menu_bar(self):
-        menu_bar = self.menuBar()
-        # Apply a dedicated style sheet to the menu bar
-        menu_bar.setStyleSheet("""
-            QMenuBar {
-                background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #2D2D2D, stop:1 #1E1E1E);
-                padding: 5px;
-            }
-            QMenuBar::item {
-                background-color: transparent;
-                padding: 8px 16px;
-                margin: 0px 2px;
-                border-radius: 4px;
-            }
-            QMenuBar::item:selected {
-                background-color: #4A4A4A;
-                color: #FFFFFF;
-            }
-        """)
-
-        # File menu
-        file_menu = menu_bar.addMenu("File")
-        file_menu.setStyleSheet("""
-            QMenu {
-                background-color: #3A3A3A;
-                color: #FFFFFF;
-                border: none;
-                border-radius: 4px;
-            }
-            QMenu::item {
-                padding: 8px 16px;
-                border-radius: 4px;
-            }
-            QMenu::item:selected {
-                background-color: #4A4A4A;
-            }
-        """)
-        
-        # File menu actions with icons and shortcuts
-        file_menu_action = file_menu.menuAction()
-        file_menu_action.setIcon(qta.icon('fa5s.file', color="white"))
-
-        new_project_action = QAction(qta.icon('fa5s.file-alt', color="white"), "New Project", self)
-        new_project_action.setShortcut("Ctrl+N")
-        new_project_action.triggered.connect(self.new_project)
-        file_menu.addAction(new_project_action)
-        
-        open_project_action = QAction(qta.icon('fa5s.folder-open', color="white"), "Open Project", self)
-        open_project_action.setShortcut("Ctrl+O")
-        open_project_action.triggered.connect(self.open_project)
-        file_menu.addAction(open_project_action)
-
-        import_wfwf_action = QAction(qta.icon('fa5s.file-import', color="white"), "Import from WFWF", self)
-        import_wfwf_action.triggered.connect(self.import_from_wfwf)
-        file_menu.addAction(import_wfwf_action)
-
-        file_menu.addSeparator()
-        
-        save_action = QAction(qta.icon('fa5s.save', color="white"), "Save Project", self)
-        save_action.setShortcut("Ctrl+S")
-        save_action.triggered.connect(self.save_project)
-        file_menu.addAction(save_action)
-        
-        save_as_action = QAction(qta.icon('fa5s.download', color="white"), "Save Project As...", self)
-        save_as_action.setShortcut("Ctrl+Shift+S")
-        save_as_action.triggered.connect(self.save_project_as)
-        file_menu.addAction(save_as_action)
-        
-        file_menu.addSeparator()
-        
-        home_action = QAction(qta.icon('fa5s.home', color="white"), "Go to Home", self)
-        home_action.triggered.connect(self.go_to_home)
-        file_menu.addAction(home_action)
-
-
-    def new_project(self):
-        from main import NewProjectDialog  # Import needed dialog
-        dialog = NewProjectDialog(self)
-        if dialog.exec_() == QDialog.Accepted:
-            source_path, project_path = dialog.get_paths()
-            if not source_path or not project_path:
-                QMessageBox.warning(self, "Error", "Please select both source and project location")
-                return
-            
-            try:
-                with zipfile.ZipFile(project_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
-                    meta = {
-                        'created': QDateTime.currentDateTime().toString(Qt.ISODate),
-                        'source': source_path,
-                        'version': '1.0'
-                    }
-                    zipf.writestr('meta.json', json.dumps(meta, indent=2))
-                    images_dir = 'images/'
-                    if os.path.isfile(source_path):
-                        zipf.write(source_path, images_dir + os.path.basename(source_path))
-                    elif os.path.isdir(source_path):
-                        for file in os.listdir(source_path):
-                            if file.lower().endswith(('png', 'jpg', 'jpeg')):
-                                zipf.write(os.path.join(source_path, file), images_dir + file)
-                    zipf.writestr('master.json', json.dumps([]))
-                self.load_project(project_path)
-            except Exception as e:
-                QMessageBox.critical(self, "Error", f"Failed to create project: {str(e)}")
-
-    def open_project(self):
-        file, _ = QFileDialog.getOpenFileName(self, "Open Project", "", "Manga Translation Files (*.mmtl)")
-        if file:
-            self.load_project(file)
-
-    def load_project(self, mmtl_path):
-        temp_dir = tempfile.mkdtemp()
-        with zipfile.ZipFile(mmtl_path, 'r') as zipf:
-            zipf.extractall(temp_dir)
-        
-        if not all(os.path.exists(os.path.join(temp_dir, p)) for p in ['meta.json', 'master.json', 'images/']):
-            QMessageBox.critical(self, "Error", "Invalid .mmtl file")
-            return
-        
-        # Clean previous project
-        if hasattr(self, 'temp_dir'):
-            import shutil
-            shutil.rmtree(self.temp_dir, ignore_errors=True)
-        
-        self.mmtl_path = mmtl_path
-        self.temp_dir = temp_dir
-        self.process_mmtl(mmtl_path, temp_dir)
-
-    def import_from_wfwf(self):
-        from main import ImportWFWFDialog  # Import needed dialog
-        dialog = ImportWFWFDialog(self)
-        if dialog.exec_() == QDialog.Accepted:
-            temp_dir = dialog.get_temp_dir()
-            if temp_dir and os.path.exists(temp_dir):
-                self.create_project_from_wfwf(temp_dir, dialog.get_url())
-
-    def create_project_from_wfwf(self, temp_dir, url):
-        project_path, _ = QFileDialog.getSaveFileName(
-            self, "Save Project", QDir.homePath(), "Manga Translation Files (*.mmtl)"
-        )
-        if project_path:
-            try:
-                filename_map = self.correct_filenames(temp_dir)
-                corrected_dir = tempfile.mkdtemp()
-                for old_name, new_name in filename_map.items():
-                    src = os.path.join(temp_dir, old_name)
-                    dst = os.path.join(corrected_dir, new_name)
-                    copyfile(src, dst)
-                with zipfile.ZipFile(project_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
-                    meta = {
-                        'created': QDateTime.currentDateTime().toString(Qt.ISODate),
-                        'source': url,
-                        'version': '1.0'
-                    }
-                    zipf.writestr('meta.json', json.dumps(meta, indent=2))
-                    images_dir = 'images/'
-                    for img in os.listdir(corrected_dir):
-                        if img.lower().endswith(('png', 'jpg', 'jpeg')):
-                            zipf.write(os.path.join(corrected_dir, img), os.path.join(images_dir, img))
-                    zipf.writestr('master.json', json.dumps([]))
-                self.load_project(project_path)
-            except Exception as e:
-                QMessageBox.critical(self, "Error", f"Failed to create project: {str(e)}")
-            finally:
-                shutil.rmtree(temp_dir)
-                shutil.rmtree(corrected_dir)
-
-    def go_to_home(self):
-        from main import Home
-        self.home = Home()
-        self.home.show()
-        self.close()
-
-    def correct_filenames(self, directory):
-        """
-        Apply number correction to filenames in the directory.
-        Returns a dict mapping original filenames to corrected ones.
-        """
-        # Get all files in the directory
-        files = os.listdir(directory)
-        filename_map = {}
-        
-        # Dictionaries to track maximum suffix lengths for both formats
-        parentheses_lengths = []
-        direct_suffix_lengths = []
-        
-        # First pass: determine maximum numeric suffix lengths for both formats
-        for filename in files:
-            base, ext = os.path.splitext(filename)
-            
-            # Check for numbers in parentheses: "filename (123).ext"
-            parentheses_match = re.match(r'^(.*?)\s*\((\d+)\)$', base)
-            if parentheses_match:
-                num_str = parentheses_match.group(2)
-                parentheses_lengths.append(len(num_str))
-                continue
-            
-            # Check for direct numeric suffixes: "filename123.ext"
-            direct_match = re.match(r'^(.*?)(\d+)$', base)
-            if direct_match:
-                num_str = direct_match.group(2)
-                direct_suffix_lengths.append(len(num_str))
-        
-        # Determine maximum lengths (if any files were found)
-        max_parentheses_length = max(parentheses_lengths) if parentheses_lengths else 0
-        max_direct_length = max(direct_suffix_lengths) if direct_suffix_lengths else 0
-        
-        # No files with numeric suffixes found
-        if max_parentheses_length == 0 and max_direct_length == 0:
-            return {filename: filename for filename in files}
-        
-        # Second pass: rename files with padded numbers
-        for filename in files:
-            base, ext = os.path.splitext(filename)
-            new_filename = filename  # Default to no change
-            
-            # Handle numbers in parentheses: "filename (123).ext"
-            parentheses_match = re.match(r'^(.*?)\s*\((\d+)\)$', base)
-            if parentheses_match and max_parentheses_length > 0:
-                base_part = parentheses_match.group(1).rstrip()  # Remove trailing space
-                num_str = parentheses_match.group(2)
-                padded_num = num_str.zfill(max_parentheses_length)
-                new_base = f"{base_part} ({padded_num})"
-                new_filename = f"{new_base}{ext}"
-            
-            # Handle direct numeric suffixes: "filename123.ext"
-            direct_match = re.match(r'^(.*?)(\d+)$', base)
-            if direct_match and max_direct_length > 0:
-                base_part = direct_match.group(1)
-                num_str = direct_match.group(2)
-                padded_num = num_str.zfill(max_direct_length)
-                new_base = f"{base_part}{padded_num}"
-                new_filename = f"{new_base}{ext}"
-            
-            if new_filename != filename:
-                # Record the mapping but don't rename yet to avoid conflicts
-                filename_map[filename] = new_filename
-            else:
-                filename_map[filename] = filename
-                
-        return filename_map
-
-
     def show_settings_dialog(self):
         dialog = SettingsDialog(self)
         if dialog.exec_():
@@ -779,10 +544,18 @@ class MainWindow(QMainWindow):
         # Load existing OCR results (only if master.json exists)
         master_path = os.path.join(temp_dir, 'master.json')
         if os.path.exists(master_path):
-            with open(master_path, 'r') as f:
-                self.ocr_results = json.load(f)  # Overwrite with saved data
+            try:
+                with open(master_path, 'r') as f:
+                    self.ocr_results = json.load(f)
+            except json.JSONDecodeError:
+                QMessageBox.critical(self, "Error", "Failed to load OCR data. Corrupted master.json?")
+                self.ocr_results = []
         
-        # No else-clause needed - retain existing initialization from __init__
+        # Load meta.json to get original language
+        meta_path = os.path.join(temp_dir, 'meta.json')
+        with open(meta_path, 'r') as f:
+            meta = json.load(f)
+            self.original_language = meta.get('original_language', 'Korean')  # Default to Korean
         
         if not self.image_paths:
             QMessageBox.warning(self, "Error", "No images found in selected folder")
@@ -814,7 +587,13 @@ class MainWindow(QMainWindow):
             return
 
         print("Starting OCR...")
-        self.reader = easyocr.Reader(['ko'])  # Initialize once here
+        try:
+            # Get language code from mapping
+            lang_code = self.language_map.get(self.original_language, 'ko')
+            self.reader = easyocr.Reader([lang_code])  # Use dynamic language
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Failed to initialize OCR reader: {str(e)}")
+            return
         self.current_image_index = 0  # Start from the first image
         
         # Reset time tracking variables
@@ -838,17 +617,28 @@ class MainWindow(QMainWindow):
         self.update_dynamic_timer_interval()  # Initialize the timer interval
         self.process_next_image()
 
-    def update_dynamic_timer_interval(self):
-        """Update the interval of the progress timer based on ETA."""
-        if self.current_image_index > 0 and self.processing_times:
-            avg_processing_time = sum(self.processing_times) / len(self.processing_times)
+    def update_dynamic_timer_interval(self, fast_mode=False):
+        if self.current_image_index == 0 or not self.processing_times:
+            interval = 100  # Default interval
+        else:
+            avg_time = sum(self.processing_times) / len(self.processing_times)
             remaining_images = len(self.image_paths) - self.current_image_index
-            estimated_remaining_time = avg_processing_time * remaining_images
+            estimated_remaining_time = avg_time * remaining_images
             
-            # Adjust the timer interval dynamically
-            # Ensure the interval is at least 50ms and at most 500ms
-            new_interval = max(50, min(int(estimated_remaining_time / 10), 500))
-            self.progress_timer.setInterval(new_interval)
+            # Proportional control: interval = (remaining_time / remaining_progress) * 1000
+            remaining_progress = 100 - self.current_progress
+            if remaining_progress <= 0:
+                interval = 100
+            else:
+                interval = int((estimated_remaining_time / remaining_progress) * 1000)
+            
+            # Enforce min/max bounds for responsiveness
+            interval = max(50, min(interval, 500))  # 50ms-500ms
+
+        if fast_mode:
+            interval = max(50, min(interval // 2, 200))  # Faster updates near completion
+
+        self.progress_timer.setInterval(interval)
 
     def update_flat_progress(self):
         if self.current_progress < 20:
@@ -891,31 +681,36 @@ class MainWindow(QMainWindow):
         self.ocr_processor.start()
 
     def update_ocr_progress_for_image(self, progress):
-        if self.current_image_index == 0:
-            # Ignore the first image's processing time for estimation
-            overall_progress = 20 + int((self.current_image_index / len(self.image_paths)) * 80 + progress / len(self.image_paths) * 80)
-        else:
-            overall_progress = 20 + int((self.current_image_index / len(self.image_paths)) * 80 + progress / len(self.image_paths) * 80)
-        self.target_progress = overall_progress
+        total_images = len(self.image_paths)
+        if total_images == 0:
+            return  # Prevent division by zero
+
+        # Calculate per-image contribution (80% divided by number of images)
+        per_image_contribution = 80.0 / total_images
+
+        # Calculate progress within the current image (0-100 to 0.0-1.0)
+        current_image_progress = progress / 100.0
+
+        # Total progress from completed images plus current image progress
+        overall_progress = 20 + (self.current_image_index * per_image_contribution) + (current_image_progress * per_image_contribution)
+
+        # Ensure progress does not exceed 100%
+        self.target_progress = min(int(overall_progress), 100)
 
     def update_progress_smoothly(self):
-        # Gradually increase the progress bar towards the target
-        if self.current_progress < self.target_progress:
-            self.current_progress += 1
-            self.ocr_progress.setValue(int(self.current_progress))
+        # Calculate required increment based on remaining progress and time
+        remaining = self.target_progress - self.current_progress
+        if remaining <= 0:
+            return
 
-        # Recalculate estimated time dynamically after the first image
-        if self.current_image_index > 0:
-            # Use the average processing time of all processed images
-            avg_processing_time = sum(self.processing_times) / len(self.processing_times)
-            remaining_images = len(self.image_paths) - self.current_image_index
-            estimated_remaining_time = avg_processing_time * remaining_images
+        # Dynamic increment: Faster when lagging, slower when close
+        increment = max(1, min(remaining, 3))  # 1-3% increments
+        self.current_progress += increment
+        self.ocr_progress.setValue(int(self.current_progress))
 
-            # Display estimated time in the progress bar tooltip
-            self.ocr_progress.setToolTip(f"Estimated time remaining: {estimated_remaining_time:.1f} seconds")
-
-            # Update the dynamic timer interval
-            self.update_dynamic_timer_interval()
+        # Immediately update ETA if close to target
+        if remaining <= 3:
+            self.update_dynamic_timer_interval(fast_mode=True)
 
     def handle_ocr_results(self, results):
         if self.ocr_processor.stop_requested:
@@ -1021,7 +816,7 @@ class MainWindow(QMainWindow):
                 }
             """)
             text_edit.setLineWrapMode(QTextEdit.WidgetWidth)
-            text_edit.textChanged.connect(lambda text, index=idx: self.on_simple_text_changed(index, text))
+            text_edit.textChanged.connect(lambda te=text_edit, index=idx: self.on_simple_text_changed(index, te.toPlainText()))
             text_layout.addWidget(text_edit)
 
             # Delete Button
@@ -1041,7 +836,7 @@ class MainWindow(QMainWindow):
                 }
             """)
             row_number = result['row_number']
-            delete_btn.clicked.connect(lambda _, rn=row_number: self.delete_row(rn))
+            delete_btn.clicked.connect(lambda _, rn=result['row_number']: self.delete_row(rn))
 
             # Add widgets to container
             container_layout.addWidget(text_frame, 1)  # Allow frame to expand
@@ -1425,51 +1220,55 @@ class MainWindow(QMainWindow):
         import_translation_file(self)
 
     def export_manhwa(self):
-        """Export images with applied translations by rendering the QGraphicsView at its original size."""
+        """Export images with applied translations directly from QGraphicsView scenes."""
         if not self.image_paths:
             QMessageBox.warning(self, "Warning", "No images available for export.")
             return
+        # Suspend updates during export
+        for i in range(self.scroll_layout.count()):
+            widget = self.scroll_layout.itemAt(i).widget()
+            if isinstance(widget, ResizableImageLabel):
+                widget.setUpdatesEnabled(False)
 
         import tempfile, shutil
         from PyQt5.QtGui import QImage, QPainter
         from PyQt5.QtCore import Qt
-        from PyQt5.QtWidgets import QApplication  # Needed to process events
 
         temp_dir = tempfile.mkdtemp()
         translated_images = []
-        original_sizes = {}  # Dictionary to store each widget's current size
 
         try:
-            # Iterate over all image widgets in the scroll area
             for i in range(self.scroll_layout.count()):
                 widget = self.scroll_layout.itemAt(i).widget()
                 if isinstance(widget, ResizableImageLabel):
-                    # Store the current size
-                    original_sizes[widget] = widget.size()
-                    # Resize widget to the original image size
-                    widget.resize(widget.original_pixmap.size())
-                    QApplication.processEvents()  # Force the update (resizeEvent will be called)
-
-                    # Now render the scene directly from the QGraphicsView's scene
                     scene = widget.scene()
-                    scene_rect = scene.sceneRect()
-                    image = QImage(int(scene_rect.width()), int(scene_rect.height()), QImage.Format_ARGB32)
+                    if not scene or scene.isActive() is False:
+                        print(f"Skipping invalid scene for {widget.filename}")
+                        continue  # Skip invalid scenes
+                    
+                    img_size = widget.original_pixmap.size()
+                    image = QImage(img_size, QImage.Format_ARGB32)
                     image.fill(Qt.transparent)
+                    
+                    painter = QPainter()
+                    try:
+                        if painter.begin(image):
+                            scene.render(painter, 
+                                    QRectF(image.rect()),
+                                    QRectF(scene.sceneRect()),
+                                    Qt.KeepAspectRatio)
+                        else:
+                            print(f"Failed to initialize painter for {widget.filename}")
+                            continue
+                    finally:
+                        painter.end()  # Ensure painter is always released
 
-                    painter = QPainter(image)
-                    scene.render(painter)
-                    painter.end()
-
-                    # Save rendered image to temporary file
+                    # Save rendered image
                     temp_path = os.path.join(temp_dir, widget.filename)
                     image.save(temp_path)
                     translated_images.append((temp_path, widget.filename))
 
-            # Restore all widgets to their original sizes
-            for widget, size in original_sizes.items():
-                widget.resize(size)
-
-            # Package images into ZIP (using your existing helper)
+            # Package images into ZIP
             from utils.file_io import export_translated_images_to_zip
             export_path, success = export_translated_images_to_zip(translated_images)
 
@@ -1477,7 +1276,15 @@ class MainWindow(QMainWindow):
                 QMessageBox.information(self, "Success", f"Exported to:\n{export_path}")
             else:
                 QMessageBox.critical(self, "Error", "Export failed")
+        except Exception as e:
+            QMessageBox.critical(self, "Render Error", f"Failed to render image: {str(e)}")
+            import traceback
+            traceback.print_exc()
         finally:
+            for i in range(self.scroll_layout.count()):
+                widget = self.scroll_layout.itemAt(i).widget()
+                if isinstance(widget, ResizableImageLabel):
+                    widget.setUpdatesEnabled(True)
             shutil.rmtree(temp_dir, ignore_errors=True)
 
     def save_project(self):
@@ -1494,23 +1301,6 @@ class MainWindow(QMainWindow):
                     zipf.write(full_path, rel_path)
                     
         QMessageBox.information(self, "Saved", "Project saved successfully")
-
-    def save_project_as(self):
-        """Handle Save As functionality"""
-        options = QFileDialog.Options()
-        file_path, _ = QFileDialog.getSaveFileName(
-            self, 
-            "Save Project As", 
-            "", 
-            "Manga Translation Project (*.mmtl)", 
-            options=options
-        )
-        
-        if file_path:
-            if not file_path.endswith('.mmtl'):
-                file_path += '.mmtl'
-            self.mmtl_path = file_path
-            self.save_project()  # Reuse existing save logic with new path
 
     def closeEvent(self, event):
         # Clean up temp directory
