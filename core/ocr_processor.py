@@ -9,12 +9,13 @@ class OCRProcessor(QThread):
     ocr_finished = pyqtSignal(list)  # Results for the current image
     error_occurred = pyqtSignal(str)
 
-    def __init__(self, image_path, reader, min_text_area):
+    def __init__(self, image_path, reader, min_text_height, max_text_height):
         super().__init__()
         self.image_path = image_path
         self.reader = reader  # Reuse the existing reader
         self.stop_requested = False  # Add stop flag
-        self.min_text_area = min_text_area  # Define a minimum area threshold for text regions
+        self.min_text_height = min_text_height  # Changed from area to height
+        self.max_text_height = max_text_height  # Changed from area to height
 
     def run(self):
         try:
@@ -57,19 +58,18 @@ class OCRProcessor(QThread):
                 # Calculate the area of the bounding box
                 x_coords = [p[0] for p in coord]
                 y_coords = [p[1] for p in coord]
-                width = max(x_coords) - min(x_coords)
-                height = max(y_coords) - min(y_coords)
-                area = width * height
 
                 # Exclude small text regions (e.g., watermarks)
-                if area >= self.min_text_area:
+                height = max(y_coords) - min(y_coords)
+                if self.min_text_height <= height <= self.max_text_height:
                     formatted.append({
                         'coordinates': [[int(x), int(y)] for x, y in coord],
                         'text': text,
                         'confidence': confidence
                     })
                 else:
-                    print(f"Excluded small text region: {text} (area: {area})")
+                    size_type = "short" if height < self.min_text_height else "tall"
+                    print(f"Excluded {size_type} text region: {text} (height: {height})")
 
                 self.ocr_progress.emit(int((i + 1) / len(results) * 100))  # 0-100% for current image
                 print(f"Processed OCR result {i + 1}/{len(results)}")

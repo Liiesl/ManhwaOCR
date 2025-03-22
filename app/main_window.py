@@ -17,7 +17,8 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("Manhwa OCR Tool")
         self.setGeometry(100, 100, 1200, 600)
         self.settings = QSettings("YourCompany", "MangaOCRTool")
-        self.min_text_area = int(self.settings.value("min_text_area", 4000))
+        self.min_text_height = int(self.settings.value("min_text_height", 40))
+        self.max_text_height = int(self.settings.value("max_text_height", 100))
         self.distance_threshold = int(self.settings.value("distance_threshold", 100))
         self.combine_action = QAction("Combine Rows", self)
         self.combine_action.triggered.connect(self.combine_selected_rows)
@@ -529,7 +530,8 @@ class MainWindow(QMainWindow):
         if dialog.exec_():
             # Update settings in main window
             self.update_shortcut()
-            self.min_text_area = int(self.settings.value("min_text_area", 4000))
+            self.min_text_height = int(self.settings.value("min_text_height", 40))
+            self.max_text_height = int(self.settings.value("max_text_height", 100))
             self.distance_threshold = int(self.settings.value("distance_threshold", 100))
 
     def process_mmtl(self, mmtl_path, temp_dir):
@@ -673,7 +675,8 @@ class MainWindow(QMainWindow):
         self.ocr_processor = OCRProcessor(
             image_path, 
             self.reader, 
-            min_text_area=self.min_text_area  # Pass new setting
+            min_text_height=self.min_text_height,  # Pass new setting
+            max_text_height=self.max_text_height
         )
         self.ocr_processor.ocr_progress.connect(self.update_ocr_progress_for_image)
         self.ocr_processor.ocr_finished.connect(self.handle_ocr_results)

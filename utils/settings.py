@@ -21,8 +21,14 @@ class SettingsDialog(QDialog):
         # Min Text Area Setting
         self.min_text_spin = QSpinBox()
         self.min_text_spin.setRange(0, 1000000)
-        self.min_text_spin.setValue(int(self.settings.value("min_text_area", 4000)))  # Default value: 4000
-        form_layout.addRow("Minimum Text Area:", self.min_text_spin)
+        self.min_text_spin.setValue(int(self.settings.value("min_text_height", 40)))  # Default 40px
+        form_layout.addRow("Minimum Text Height:", self.min_text_spin)
+        
+        #Max Text Area Setting
+        self.max_text_spin = QSpinBox()
+        self.max_text_spin.setRange(0, 10000000)
+        self.max_text_spin.setValue(int(self.settings.value("max_text_height", 100)))  # Default 200px
+        form_layout.addRow("Maximum Text Height:", self.max_text_spin)
         
         # Distance Threshold Setting
         self.distance_spin = QSpinBox()
@@ -101,7 +107,8 @@ class SettingsDialog(QDialog):
 
     def accept(self):
         # Save new settings
-        self.settings.setValue("min_text_area", self.min_text_spin.value())
+        self.settings.setValue("min_text_height", self.min_text_spin.value())
+        self.settings.setValue("max_text_height", self.max_text_spin.value())
         self.settings.setValue("distance_threshold", self.distance_spin.value())
         self.settings.setValue("gemini_api_key", self.api_key_edit.text())
         self.settings.setValue("gemini_model", self.model_combo.currentText())
