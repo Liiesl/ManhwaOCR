@@ -2,10 +2,11 @@
 an app that lets you MTL your manhwa with ease. designed with simplicity at its core .
 
 ## Table of Contents
-- [Woekflow](#workflow)
+- [Workflow](#workflow)
   - [Create Project](#create-project)
   - [Start OCR](#start-the-ocr)
   - [Translation](#configure-and-translate-with-gemini-api-free)
+  - [Apply Translation & Save](#apply-translation-and-save-manhwa)
 - [Installation](#installation-guide)
   - [Prerequisites](#prerequisites)
   - [Step-by-Step Guide](#step-by-step-guide)
@@ -28,6 +29,10 @@ https://github.com/user-attachments/assets/432fa7f7-9172-43b7-97c7-28e8d66b6758
 yes, gemini api is free. if you still haven't made one, what are you waiting for!?!
 
 https://github.com/user-attachments/assets/2b255b1e-a036-4b98-b22c-5d72854a65c3
+
+## Apply Translation and Save Manhwa
+
+https://github.com/user-attachments/assets/a3269eb7-2849-4a44-840b-c5433d3ce8fc
 
 
 
