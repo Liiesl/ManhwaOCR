@@ -1,6 +1,38 @@
 # ManhwaOCR
 an app that lets you MTL your manhwa with ease. designed with simplicity at its core .
 
+## Table of Contents
+- [Woekflow](#workflow)
+  - [Create Project](#create-project)
+  - [Start OCR](#start-the-ocr)
+  - [Translation](#configure-and-translate-with-gemini-api-free)
+- [Installation](#installation-guide)
+  - [Prerequisites](#prerequisites)
+  - [Step-by-Step Guide](#step-by-step-guide)
+- [Troubleshooting](#troubleshooting)
+
+---
+
+# Workflow
+
+## Create Project
+
+https://github.com/user-attachments/assets/29a9de14-5e11-4292-8943-4ad793abb5d3
+
+## Start the OCR
+
+https://github.com/user-attachments/assets/432fa7f7-9172-43b7-97c7-28e8d66b6758
+
+## Configure and Translate with Gemini API (Free!)
+
+yes, gemini api is free. if you still haven't made one, what are you waiting for!?!
+
+https://github.com/user-attachments/assets/2b255b1e-a036-4b98-b22c-5d72854a65c3
+
+
+
+---
+
 # Installation Guide
 
 This guide will help you set up and run the Manhwa OCR Tool on your system. Follow the steps below to install all necessary dependencies and execute the application.
@@ -29,7 +61,7 @@ Clone this repository to your local machine using the following command:
 
 ```bash
 git clone https://github.com/Liiesl/ManhwaOCR.git
-cd manhwa-ocr-tool
+cd ManhwaOCR
 ```
 
 ## Step 2: Install Required Dependencies
@@ -99,16 +131,6 @@ This specifies a stable version of PyQt5.
 ### 3. Missing Dependencies
 
 If you encounter any "ModuleNotFoundError" during runtime, it means a required library is missing. Use the error message to identify the missing module and install it using `pip`.
-
----
-
-## Usage Instructions
-
-1. **Open Folder**: Click the "Open Folder" button to select a directory containing images.
-2. **Process OCR**: Click the "Process OCR" button to start OCR processing on the selected images.
-3. **Import Translation**: Import translations from an MD file using the "Import Translation" button.
-4. **Export OCR**: Export OCR results to a Markdown file using the "Export OCR" button.
-5. **Apply Translation**: Apply translations to the images using the "Apply Translation" button.
 
 ---
 
