@@ -1,6 +1,7 @@
-from PyQt5.QtWidgets import QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QSizePolicy, QDialog, QFrame, QScrollArea, QStackedWidget, QCheckBox, QPushButton, QFileDialog, QLabel, QProgressBar, QTableWidget, QTableWidgetItem, QMessageBox, QSplitter, QHeaderView, QAction, QTextEdit
-from PyQt5.QtCore import Qt, pyqtSignal, QDateTime, QTimer, QSettings, QRectF, QEvent, QDir
-from PyQt5.QtGui import QPixmap, QKeySequence, QFontMetrics, QTextOption
+from PyQt5.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QSizePolicy, QFrame, QScrollArea, QStackedWidget, QCheckBox, QPushButton, 
+                             QProgressBar, QTableWidget, QTableWidgetItem, QMessageBox, QSplitter, QHeaderView, QAction, QTextEdit)
+from PyQt5.QtCore import Qt, QDateTime, QTimer, QSettings, QRectF, QEvent
+from PyQt5.QtGui import QPixmap, QKeySequence, QFontMetrics
 import qtawesome as qta
 from core.ocr_processor import OCRProcessor
 from utils.file_io import export_ocr_results, import_translation_file
@@ -945,7 +946,68 @@ class MainWindow(QMainWindow):
         return super().eventFilter(obj, event)
     
     def delete_row(self, row_number):
-        # Find the OCR result with the given row_number
+        # Check if we should show warning
+        show_warning = self.settings.value("show_delete_warning", "true") == "true"
+        proceed = True
+        
+        if show_warning:
+            msg = QMessageBox()
+            msg.setIcon(QMessageBox.Warning)
+            msg.setWindowTitle("Confirm Deletion")
+            msg.setText("<b>Permanent Deletion Warning</b>")
+            msg.setInformativeText("This action will permanently delete the selected text entry. Deleted content cannot be recovered.\n\nDo you want to continue?")
+
+            # Apply consistent styling
+            msg.setStyleSheet(f"""
+                QMessageBox {{
+                    background-color: {self.colors['background']};
+                    color: {self.colors['text']};
+                    font-size: 16px;
+                }}
+                QLabel {{
+                    color: {self.colors['text']};
+                }}
+                QCheckBox {{
+                    color: {self.colors['text']};
+                    spacing: 8px;
+                }}
+                QCheckBox::indicator {{
+                    width: 18px;
+                    height: 18px;
+                }}
+                QPushButton {{
+                    background-color: {self.colors['primary']};
+                    color: {self.colors['text']};
+                    min-width: 80px;
+                    padding: 8px;
+                    border-radius: 4px;
+                }}
+                QPushButton:hover {{
+                    background-color: {self.colors['secondary']};
+                }}
+            """)
+
+            # Add "Don't show again" checkbox
+            dont_show_cb = QCheckBox("Remember my choice and do not ask again", msg)
+            msg.setCheckBox(dont_show_cb)
+
+            msg.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
+            msg.setDefaultButton(QMessageBox.No)
+            
+            # Set window icon using qtawesome
+            msg.setWindowIcon(qta.icon('fa5s.exclamation-triangle', color='orange'))
+            
+            response = msg.exec_()
+            
+            if dont_show_cb.isChecked():
+                self.settings.setValue("show_delete_warning", "false")
+            
+            proceed = response == QMessageBox.Yes
+        
+        if not proceed:
+            return
+
+        # Original deletion logic
         for idx, result in enumerate(self.ocr_results):
             if result['row_number'] == row_number:
                 del self.ocr_results[idx]

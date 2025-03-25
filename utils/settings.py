@@ -1,4 +1,4 @@
-from PyQt5.QtWidgets import QDialog, QVBoxLayout, QFormLayout, QComboBox, QSpinBox, QDialogButtonBox, QTabWidget, QWidget, QLineEdit, QKeySequenceEdit
+from PyQt5.QtWidgets import QDialog, QVBoxLayout, QFormLayout, QComboBox, QSpinBox, QDialogButtonBox, QTabWidget, QWidget, QLineEdit, QKeySequenceEdit, QCheckBox
 from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QKeySequence
 
@@ -13,6 +13,18 @@ class SettingsDialog(QDialog):
         
         # Create tab widget
         self.tab_widget = QTabWidget()
+
+        general_tab = QWidget()
+        general_layout = QFormLayout()
+
+        self.show_delete_warning_check = QCheckBox()
+        self.show_delete_warning_check.setChecked(
+            self.settings.value("show_delete_warning", "true") == "true"
+        )
+        general_layout.addRow("Show delete confirmation dialog:", self.show_delete_warning_check)
+
+        general_tab.setLayout(general_layout)
+        self.tab_widget.addTab(general_tab, "General")
         
         # OCR Processing Settings Tab
         processing_tab = QWidget()
@@ -107,6 +119,9 @@ class SettingsDialog(QDialog):
 
     def accept(self):
         # Save new settings
+        self.settings.setValue("show_delete_warning", 
+            "true" if self.show_delete_warning_check.isChecked() else "false"
+        )
         self.settings.setValue("min_text_height", self.min_text_spin.value())
         self.settings.setValue("max_text_height", self.max_text_spin.value())
         self.settings.setValue("distance_threshold", self.distance_spin.value())
