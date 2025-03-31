@@ -537,6 +537,9 @@ class MainWindow(QMainWindow):
 
     def process_mmtl(self, mmtl_path, temp_dir):
         self.mmtl_path = mmtl_path
+        # Add project name to window title
+        project_name = os.path.splitext(os.path.basename(mmtl_path))[0]
+        self.setWindowTitle(f"{project_name} | ManhwaOCR")  # <-- Add this line
         self.temp_dir = temp_dir
         self.image_paths = sorted([
             os.path.join(temp_dir, 'images', f) 
