@@ -1,4 +1,4 @@
-from PyQt5.QtWidgets import QDialog, QVBoxLayout, QFormLayout, QComboBox, QSpinBox, QDialogButtonBox, QTabWidget, QWidget, QLineEdit, QKeySequenceEdit, QCheckBox
+from PyQt5.QtWidgets import QDialog, QDoubleSpinBox, QVBoxLayout, QFormLayout, QComboBox, QSpinBox, QDialogButtonBox, QTabWidget, QWidget, QLineEdit, QKeySequenceEdit, QCheckBox
 from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QKeySequence
 
@@ -41,6 +41,13 @@ class SettingsDialog(QDialog):
         self.max_text_spin.setRange(0, 10000000)
         self.max_text_spin.setValue(int(self.settings.value("max_text_height", 100)))  # Default 200px
         form_layout.addRow("Maximum Text Height:", self.max_text_spin)
+
+        #Min Confidence Setting
+        self.confidence_spin = QDoubleSpinBox()
+        self.confidence_spin.setRange(0.0, 1.0)
+        self.confidence_spin.setSingleStep(0.1)
+        self.confidence_spin.setValue(float(self.settings.value("min_confidence", 0.2)))
+        form_layout.addRow("Minimum Confidence:", self.confidence_spin)
         
         # Distance Threshold Setting
         self.distance_spin = QSpinBox()
@@ -124,6 +131,7 @@ class SettingsDialog(QDialog):
         )
         self.settings.setValue("min_text_height", self.min_text_spin.value())
         self.settings.setValue("max_text_height", self.max_text_spin.value())
+        self.settings.setValue("min_confidence", self.confidence_spin.value())
         self.settings.setValue("distance_threshold", self.distance_spin.value())
         self.settings.setValue("gemini_api_key", self.api_key_edit.text())
         self.settings.setValue("gemini_model", self.model_combo.currentText())

@@ -9,13 +9,14 @@ class OCRProcessor(QThread):
     ocr_finished = pyqtSignal(list)  # Results for the current image
     error_occurred = pyqtSignal(str)
 
-    def __init__(self, image_path, reader, min_text_height, max_text_height):
+    def __init__(self, image_path, reader, min_text_height, max_text_height, min_confidence):
         super().__init__()
         self.image_path = image_path
         self.reader = reader  # Reuse the existing reader
         self.stop_requested = False  # Add stop flag
         self.min_text_height = min_text_height  # Changed from area to height
         self.max_text_height = max_text_height  # Changed from area to height
+        self.min_confidence = min_confidence
 
     def run(self):
         try:
@@ -61,15 +62,25 @@ class OCRProcessor(QThread):
 
                 # Exclude small text regions (e.g., watermarks)
                 height = max(y_coords) - min(y_coords)
-                if self.min_text_height <= height <= self.max_text_height:
+                if (self.min_text_height <= height <= self.max_text_height and 
+                    confidence >= self.min_confidence):
                     formatted.append({
                         'coordinates': [[int(x), int(y)] for x, y in coord],
                         'text': text,
                         'confidence': confidence
                     })
                 else:
-                    size_type = "short" if height < self.min_text_height else "tall"
-                    print(f"Excluded {size_type} text region: {text} (height: {height})")
+                    # Update exclusion message
+                    exclusion_reasons = []
+                    if height < self.min_text_height:
+                        exclusion_reasons.append("short")
+                    if height > self.max_text_height:
+                        exclusion_reasons.append("tall")
+                    if confidence < self.min_confidence:
+                        exclusion_reasons.append(f"low confidence ({confidence:.2f})")
+                    
+                    if exclusion_reasons:
+                        print(f"Excluded {'/'.join(exclusion_reasons)} text region: {text}")
 
                 self.ocr_progress.emit(int((i + 1) / len(results) * 100))  # 0-100% for current image
                 print(f"Processed OCR result {i + 1}/{len(results)}")
