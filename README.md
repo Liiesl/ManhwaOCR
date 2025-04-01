@@ -2,15 +2,25 @@
 an app that lets you MTL your manhwa with ease. designed with simplicity at its core .
 
 ## Table of Contents
+- [ManhwaOCR](#manhwaocr)
+  - [Table of Contents](#table-of-contents)
 - [Workflow](#workflow)
   - [Create Project](#create-project)
-  - [Start OCR](#start-the-ocr)
-  - [Translation](#configure-and-translate-with-gemini-api-free)
-  - [Apply Translation & Save](#apply-translation-and-save-manhwa)
-- [Installation](#installation-guide)
+  - [Start the OCR](#start-the-ocr)
+  - [Configure and Translate with Gemini API (Free!)](#configure-and-translate-with-gemini-api-free)
+  - [Apply Translation and Save Manhwa](#apply-translation-and-save-manhwa)
+- [Installation Guide](#installation-guide)
   - [Prerequisites](#prerequisites)
-  - [Step-by-Step Guide](#step-by-step-guide)
-- [Troubleshooting](#troubleshooting)
+  - [Step 1: Clone the Repository](#step-1-clone-the-repository)
+  - [Step 2: Install Required Dependencies](#step-2-install-required-dependencies)
+  - [Step 3: Run the Application](#step-3-run-the-application)
+  - [Troubleshooting](#troubleshooting)
+    - [1. Some Text is Not Detected](#1-some-text-is-not-detected)
+    - [2. EasyOCR Does Not Work as Intended](#2-easyocr-does-not-work-as-intended)
+    - [3. PyQt5 Installation Issues](#3-pyqt5-installation-issues)
+    - [4. Missing Dependencies](#4-missing-dependencies)
+  - [Notes](#notes)
+  - [Contributing](#contributing)
 
 ---
 
@@ -109,31 +119,40 @@ This will launch the Manhwa OCR Tool GUI. From here, you can open a folder conta
 
 ## Troubleshooting
 
-### 1. EasyOCR Installation Issues
+Below are solutions to common issues you may encounter while using this tool. If your problem isn't listed here, consider opening an issue on the repository for further assistance.
 
-If you encounter issues installing EasyOCR, ensure that you have the latest version of `pip` and `setuptools`:
+### 1. Some Text is Not Detected
+This issue typically occurs when the default settings do not align with the characteristics of your desired manhwa. While the default settings work for most manhwa, some may have unique layouts or text styles that require adjustments.
 
-```bash
-pip install --upgrade pip setuptools
-```
+**Solution:**  
+Navigate to `Settings > OCR Processing` and fine-tune the settings to better match the characteristics of your manhwa. Experiment with parameters such as text size, font style, or alignment to improve detection accuracy.
 
-Then retry installing EasyOCR:
+### 2. EasyOCR Does Not Work as Intended
 
-```bash
-pip install easyocr
-```
+If EasyOCR does not function correctly, the issue is often related to an incompatible or missing installation of PyTorch. EasyOCR relies on PyTorch for its core functionality, so ensuring the correct version is installed is crucial.
 
-### 2. PyQt5 Installation Issues
+**Solution:**  
+1. Visit the [EasyOCR GitHub Installation Guide](https://github.com/JaidedAI/EasyOCR#installation) for detailed instructions.
+2. Download and install the **correct version of PyTorch** for your system by following the official [PyTorch Get Started guide](https://pytorch.org/get-started/locally/). Ensure you select the appropriate configuration (e.g., OS, Python version, CUDA support).
+3. Once PyTorch is installed, retry installing EasyOCR:
+
+   ```bash
+   pip install easyocr
+   ```
+
+**Note:** If you're using a GPU, verify that your CUDA drivers are up-to-date and compatible with the installed version of PyTorch. For CPU-only setups, choose the corresponding PyTorch variant during installation.
+
+### 3. PyQt5 Installation Issues
 
 If PyQt5 installation fails, try installing it with the following command:
 
 ```bash
-pip install PyQt5==5.15.9
+pip install PyQt5==5.15.11
 ```
 
 This specifies a stable version of PyQt5.
 
-### 3. Missing Dependencies
+### 4. Missing Dependencies
 
 If you encounter any "ModuleNotFoundError" during runtime, it means a required library is missing. Use the error message to identify the missing module and install it using `pip`.
 
@@ -141,15 +160,20 @@ If you encounter any "ModuleNotFoundError" during runtime, it means a required l
 
 ## Notes
 
-- Ensure that all images in the selected folder are in supported formats (e.g., PNG, JPG, JPEG).
-- The tool groups and merges text regions that are close to each other to improve readability.
-- OCR processing may take some time depending on the number of images and their sizes.
+- **Images Files:** Ensure that all images in the selected folder are in supported formats (e.g., PNG, JPG, JPEG).
+- **Explore Settings** to finds a lot of configurable for the app.
+- **OCR processing** may take some time depending on the number of images and their sizes.
+- **Environment Compatibility:** Ensure your Python environment meets the minimum requirements for this tool.  
+- **Logs and Debugging:** If you're still facing issues, enable debug logging (if available) to gather more information about the problem.  
+- **Community Support:** For unresolved issues, feel free to open an issue on the repository. Include detailed steps to reproduce the problem, along with any relevant logs or screenshots.
 
 ---
 
 ## Contributing
 
 Feel free to contribute to this project by submitting pull requests or opening issues in the repository.
+
+Package distributor are needed. if you're proficient in the field please leave comment in discussion.
 
 ---
 
