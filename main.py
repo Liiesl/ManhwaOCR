@@ -1,16 +1,11 @@
 import sys
-from PyQt5.QtWidgets import (QApplication, QWidget, QVBoxLayout, QPushButton, QProgressBar, QFrame, QMainWindow,
-                            QLabel, QListWidget, QMessageBox, QLineEdit, QFileDialog, QStatusBar, QScrollArea,
-                            QListWidgetItem, QHBoxLayout, QGridLayout, QDialog, QDialogButtonBox, QComboBox)
+from PyQt5.QtWidgets import (QApplication, QWidget, QVBoxLayout, QPushButton, QProgressBar, QFrame, QMainWindow, QLabel, QListWidget, QMessageBox, QLineEdit, 
+                            QFileDialog, QStatusBar, QScrollArea, QHBoxLayout, QDialog, QDialogButtonBox, QComboBox)
 from PyQt5.QtCore import Qt, QSettings, QDateTime, QDir, QThread, pyqtSignal
 from PyQt5.QtGui import QFont
-import os
-import zipfile
-import json
-import tempfile
-import re
+from assets.styles import (HOME_STYLES, HOME_LEFT_LAYOUT_STYLES, NEW_PROJECT_STYLES, WFWF_STYLES)
+import os, zipfile, json, tempfile, re, requests
 from shutil import copyfile, rmtree
-import requests
 from bs4 import BeautifulSoup
 from urllib.parse import urljoin
 
@@ -61,57 +56,7 @@ class ImportWFWFDialog(QDialog):
         self.temp_dir = None
         self.download_worker = None
         
-        self.setStyleSheet("""
-            QDialog {
-                background-color: #2D2D2D;
-                color: #FFFFFF;
-                font-size: 14px;
-            }
-            QLineEdit {
-                background-color: #3A3A3A;
-                padding: 8px;
-                border: 1px solid #4A4A4A;
-                border-radius: 4px;
-                margin: 5px 0;
-            }
-            QLabel {
-                color: #CCCCCC;
-            }
-            QListWidget {
-                background-color: #3A3A3A;
-                color: #FFFFFF;
-                border-radius: 4px;
-                padding: 5px;
-            }
-            QPushButton {
-                background-color: #4A4A4A;
-                color: #FFFFFF;
-                padding: 8px 16px;
-                border: none;
-                border-radius: 4px;
-                min-width: 80px;
-            }
-            QPushButton:hover {
-                background-color: #5A5A5A;
-            }
-            QPushButton:disabled {
-                background-color: #3A3A3A;
-                color: #999999;
-            }
-            QProgressBar {
-                border: 1px solid #4A4A4A;
-                border-radius: 4px;
-                text-align: center;
-                height: 20px;
-            }
-            QProgressBar::chunk {
-                background-color: #5294e2;
-                width: 1px;
-            }
-            QStatusBar {
-                color: #CCCCCC;
-            }
-        """)
+        self.setStyleSheet(WFWF_STYLES)
     
     def get_url(self):
         return self.url_input.text().strip()
@@ -288,50 +233,7 @@ class NewProjectDialog(QDialog):
         layout.addWidget(self.button_box)
         
         # Styling
-        self.setStyleSheet("""
-            QDialog {
-                background-color: #2D2D2D;
-                color: #FFFFFF;
-                font-size: 14px;
-            }
-            QLineEdit {
-                background-color: #3A3A3A;
-                padding: 8px;
-                border: 1px solid #4A4A4A;
-                border-radius: 4px;
-                margin: 5px 0;
-            }
-            QPushButton {
-                background-color: #4A4A4A;
-                color: #FFFFFF;
-                padding: 8px 16px;
-                border: none;
-                border-radius: 4px;
-                min-width: 80px;
-            }
-            QPushButton:hover {
-                background-color: #5A5A5A;
-            }
-            QLabel {
-                margin-top: 10px;
-                color: #CCCCCC;
-            }
-            QComboBox {
-                background-color: #3A3A3A;
-                color: #FFFFFF;
-                padding: 5px;
-                border: 1px solid #4A4A4A;
-                border-radius: 4px;
-            }
-            QComboBox::drop-down {
-                border: none;
-            }
-            QComboBox QAbstractItemView {
-                background-color: #3A3A3A;
-                color: #FFFFFF;
-                selection-background-color: #5A5A5A;
-            }
-        """)
+        self.setStyleSheet(NEW_PROJECT_STYLES)
     
     def choose_image(self):
         file, _ = QFileDialog.getOpenFileName(self, "Select Image", QDir.homePath(), "Images (*.png *.jpg *.jpeg)")
@@ -378,9 +280,9 @@ class ProjectItemWidget(QFrame):
         self.name_label = QLabel(name)
         self.name_label.setStyleSheet("font-size: 14px;")
         
-        # Last opened
-        self.last_opened_label = QLabel(last_opened if last_opened else name)
-        self.last_opened_label.setStyleSheet("font-size: 14px;")
+        # Last opened (display formatted date instead of path)
+        self.last_opened_label = QLabel(last_opened if last_opened else "Never opened")
+        self.last_opened_label.setStyleSheet("font-size: 14px; color: #aaaaaa;")
         
         # Add widgets to layout
         self.layout.addWidget(self.name_label)
@@ -416,7 +318,7 @@ class ProjectsListWidget(QWidget):
         self.name_header = QLabel("Name")
         self.name_header.setStyleSheet("font-weight: bold; color: #cccccc;")
         
-        self.last_opened_header = QLabel("Project Path")
+        self.last_opened_header = QLabel("Last Opened")
         self.last_opened_header.setStyleSheet("font-weight: bold; color: #cccccc;")
         
         self.header_layout.addWidget(self.name_header)
@@ -464,6 +366,55 @@ class ProjectsListWidget(QWidget):
                 item.widget().deleteLater()
             self.projects_layout.removeItem(item)
 
+# Add after ImportDownloadWorker class
+class LoadingDialog(QDialog):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Opening Project...")
+        self.setWindowFlag(Qt.FramelessWindowHint)
+        self.setWindowModality(Qt.ApplicationModal)
+        self.setFixedSize(200, 100)
+        layout = QVBoxLayout()
+        self.label = QLabel("Opening project,\n please wait...")
+        self.label.setAlignment(Qt.AlignCenter)
+        layout.addWidget(self.label)
+        self.setLayout(layout)
+        self.setStyleSheet("""
+            QDialog {
+                background-color: #1D1D1D;
+                color: #FFFFFF;
+            }
+            QLabel {
+                background-color: none;
+                color: #CCCCCC;
+            }
+        """)
+
+class ProjectLoaderThread(QThread):
+    finished = pyqtSignal(str, str)  # (mmtl_path, temp_dir)
+    error = pyqtSignal(str)
+
+    def __init__(self, mmtl_path):
+        super().__init__()
+        self.mmtl_path = mmtl_path
+
+    def run(self):
+        temp_dir = tempfile.mkdtemp()
+        try:
+            # Extract project
+            with zipfile.ZipFile(self.mmtl_path, 'r') as zipf:
+                zipf.extractall(temp_dir)
+
+            # Verify structure
+            required = ['meta.json', 'master.json', 'images/']
+            if not all(os.path.exists(os.path.join(temp_dir, p)) for p in required):
+                raise Exception("Invalid .mmtl file structure")
+
+            self.finished.emit(self.mmtl_path, temp_dir)
+        except Exception as e:
+            self.error.emit(str(e))
+            rmtree(temp_dir, ignore_errors=True)
+
 class Home(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -471,44 +422,11 @@ class Home(QMainWindow):
         self.init_ui()
         
     def init_ui(self):
-        self.setWindowTitle("Manga OCR Tool")
+        self.setWindowTitle("ManhwaOCR")
         self.setMinimumSize(800, 600)
         
         # Set the dark theme
-        self.setStyleSheet("""
-            QMainWindow, QWidget {
-                background-color: #1a1a1a;
-                color: white;
-            }
-            QPushButton {
-                background-color: #3E3E3E;
-                color: white;
-                border-radius: 15px;
-                padding: 10px 15px;
-                border: none;
-                font-size: 14px;
-            }
-            QPushButton:hover {
-                background-color: #4f4f4f;
-            }
-            QScrollArea {
-                background-color: transparent;
-                border: none;
-            }
-            QScrollBar:vertical {
-                background: #1a1a1a;
-                width: 10px;
-                margin: 0px;
-            }
-            QScrollBar::handle:vertical {
-                background: #444444;
-                min-height: 20px;
-                border-radius: 5px;
-            }
-            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
-                height: 0px;
-            }
-        """)
+        self.setStyleSheet(HOME_STYLES)
         
         # Create central widget
         self.central_widget = QWidget()
@@ -541,26 +459,7 @@ class Home(QMainWindow):
         self.left_layout = QWidget()
         self.left_layout.setLayout(self.left_layout_layout)
         self.left_layout.setMaximumWidth(200)
-        self.left_layout.setStyleSheet("""
-            QWidget {
-                background-color: #2B2B2B;
-                padding: 20px;
-                border: none;
-                border-top-right-radius: 20px;
-            }
-            QPushButton {
-                background-color: #3E3E3E;
-                color: white;
-                border-radius: 15px;
-                padding: 10px 15px;
-                border: none;
-                font-size: 14px;
-                min-height: 40px;
-            }
-            QPushButton:hover {
-                background-color: #4f4f4f;
-            }
-        """)
+        self.left_layout.setStyleSheet(HOME_LEFT_LAYOUT_STYLES)
         
         # Right content area
         self.content = QWidget()
@@ -582,13 +481,57 @@ class Home(QMainWindow):
         # Load recent projects
         self.load_recent_projects()
 
+    # Add this function to calculate relative time
+    def get_relative_time(self, timestamp_str):
+        """Convert timestamp to relative time (e.g., '3 days ago')"""
+        if not timestamp_str:
+            return "Never opened"
+            
+        # Convert string timestamp to QDateTime
+        timestamp = QDateTime.fromString(timestamp_str, Qt.ISODate)
+        current_time = QDateTime.currentDateTime()
+        
+        # Calculate the time difference in seconds
+        seconds = timestamp.secsTo(current_time)
+        
+        if seconds < 0:  # Future date (shouldn't happen, but just in case)
+            return timestamp.toString("MMM d, yyyy h:mm AP")
+            
+        # Convert to appropriate units
+        if seconds < 60:
+            return "Just now"
+        elif seconds < 3600:
+            minutes = seconds // 60
+            return f"{minutes} minute{'s' if minutes > 1 else ''} ago"
+        elif seconds < 86400:
+            hours = seconds // 3600
+            return f"{hours} hour{'s' if hours > 1 else ''} ago"
+        elif seconds < 604800:  # 7 days
+            days = seconds // 86400
+            return f"{days} day{'s' if days > 1 else ''} ago"
+        elif seconds < 2592000:  # 30 days
+            weeks = seconds // 604800
+            return f"{weeks} week{'s' if weeks > 1 else ''} ago"
+        elif seconds < 31536000:  # 365 days
+            months = seconds // 2592000
+            return f"{months} month{'s' if months > 1 else ''} ago"
+        else:
+            years = seconds // 31536000
+            return f"{years} year{'s' if years > 1 else ''} ago"
+
+    # Modify the load_recent_projects method to use relative time
     def load_recent_projects(self):
-        recent = self.settings.value("recent_projects", [])
+        recent_projects = self.settings.value("recent_projects", [])
+        recent_timestamps = self.settings.value("recent_timestamps", {})
+        
         self.projects_list.clear()
-        for path in recent:
+        for path in recent_projects:
             if os.path.exists(path):
                 filename = os.path.basename(path)
-                self.projects_list.add_project(filename, path)
+                # Get relative time string
+                timestamp = recent_timestamps.get(path, "")
+                last_opened = self.get_relative_time(timestamp)
+                self.projects_list.add_project(filename, path, last_opened)
 
     def open_project_from_path(self, path):
         if os.path.exists(path):
@@ -763,34 +706,52 @@ class Home(QMainWindow):
         return filename_map
 
     def update_recent_projects(self, project_path):
+        # Update list of recent projects
         recent = self.settings.value("recent_projects", [])
         if project_path in recent:
             recent.remove(project_path)
         recent.insert(0, project_path)
         recent = recent[:5]  # Keep only last 5
         self.settings.setValue("recent_projects", recent)
+        
+        # Update timestamps dictionary
+        timestamps = self.settings.value("recent_timestamps", {})
+        # Add current timestamp for the opened project
+        current_time = QDateTime.currentDateTime().toString(Qt.ISODate)
+        timestamps[project_path] = current_time
+        self.settings.setValue("recent_timestamps", timestamps)
 
     def launch_main_app(self, mmtl_path):
-        from app.main_window import MainWindow
-        self.update_recent_projects(mmtl_path)
-        
-        # Create temp directory
-        temp_dir = tempfile.mkdtemp()
-        with zipfile.ZipFile(mmtl_path, 'r') as zipf:
-            zipf.extractall(temp_dir)
+        # Show loading dialog
+        self.loading_dialog = LoadingDialog(self)
+        self.loading_dialog.show()
+
+        # Create and start loader thread
+        self.loader_thread = ProjectLoaderThread(mmtl_path)
+        self.loader_thread.finished.connect(self.handle_project_loaded)
+        self.loader_thread.error.connect(self.handle_project_error)
+        self.loader_thread.start()
+
+    def handle_project_loaded(self, mmtl_path, temp_dir):
+        try:
+            from app.main_window import MainWindow
+            self.update_recent_projects(mmtl_path)
             
-        # Verify structure
-        required = ['meta.json', 'master.json', 'images/']
-        if not all(os.path.exists(os.path.join(temp_dir, p)) for p in required):
-            QMessageBox.critical(self, "Error", "Invalid .mmtl file")
-            return
+            # Create main window
+            self.main_window = MainWindow()
+            self.main_window.process_mmtl(mmtl_path, temp_dir)
+            self.main_window.show()
+
+            self.loading_dialog.close()
             
-        # Create and show main window
-        self.main_window = MainWindow()
-        self.main_window.process_mmtl(mmtl_path, temp_dir)
-        self.main_window.show()
-        
-        self.close()
+            self.close()
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Failed to launch project: {str(e)}")
+            rmtree(temp_dir, ignore_errors=True)
+
+    def handle_project_error(self, error_msg):
+        self.loading_dialog.close()
+        QMessageBox.critical(self, "Error", f"Failed to open project:\n{error_msg}")
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
