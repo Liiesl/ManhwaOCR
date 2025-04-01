@@ -1,13 +1,13 @@
 from PyQt5.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QSizePolicy, QFrame, QScrollArea, QStackedWidget, QCheckBox, QPushButton, 
-                             QProgressBar, QTableWidget, QTableWidgetItem, QMessageBox, QSplitter, QHeaderView, QAction, QTextEdit)
-from PyQt5.QtCore import Qt, QDateTime, QTimer, QSettings, QRectF, QEvent
+                             QTableWidget, QTableWidgetItem, QMessageBox, QSplitter, QHeaderView, QAction, QTextEdit)
+from PyQt5.QtCore import Qt, QSettings, QEvent
 from PyQt5.QtGui import QPixmap, QKeySequence, QFontMetrics
 import qtawesome as qta
 from core.ocr_processor import OCRProcessor
 from utils.file_io import export_ocr_results, import_translation_file, export_rendered_images
 from core.data_processing import group_and_merge_text
-from app.widgets import ResizableImageLabel, CustomScrollArea, TextEditDelegate, MenuBar
-from app.widgets_2 import CustomProgressBar
+from app.widgets import ResizableImageLabel, CustomScrollArea, TextEditDelegate
+from app.widgets_2 import CustomProgressBar, MenuBar
 from utils.settings import SettingsDialog
 from core.translations import TranslationThread, generate_for_translate_content, import_translation_file_content
 from assets.styles import (COLORS, MAIN_STYLESHEET, IV_BUTTON_STYLES, ADVANCED_CHECK_STYLES, RIGHT_WIDGET_STYLES, SIMPLE_VIEW_STYLES, DELETE_ROW_STYLES,

@@ -1,5 +1,124 @@
-from PyQt5.QtWidgets import QProgressBar
+from PyQt5.QtWidgets import QProgressBar, QMenuBar, QAction, QDialog, QMessageBox, QFileDialog
 from PyQt5.QtCore import QTimer, QDateTime
+import qtawesome as qta
+
+class MenuBar(QMenuBar):
+    def __init__(self, parent):
+        super().__init__(parent)
+        self.main_window = parent  # Reference to main window
+        self.setStyleSheet("""
+         
+            QMenuBar {
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #2D2D2D, stop:1 #1E1E1E);
+                padding: 5px;
+            }
+            QMenuBar::item {
+                background-color: transparent;
+                padding: 8px 16px;
+                margin: 0px 2px;
+                border-radius: 4px;
+            }
+            QMenuBar::item:selected {
+                background-color: #4A4A4A;
+                color: #FFFFFF;
+            }
+        """)                   
+        self.create_menu_bar()
+        # Add other menus here
+        
+    def create_menu_bar(self):
+        # File menu
+        file_menu = self.addMenu("File")
+        file_menu.setStyleSheet("""
+            QMenu {
+                background-color: #3A3A3A;
+                color: #FFFFFF;
+                border: none;
+                border-radius: 4px;
+            }
+            QMenu::item {
+                padding: 8px 16px;
+                border-radius: 4px;
+            }
+            QMenu::item:selected {
+                background-color: #4A4A4A;
+            }
+        """)
+        
+        # File menu actions with icons and shortcuts
+        file_menu_action = file_menu.menuAction()
+        file_menu_action.setIcon(qta.icon('fa5s.file', color="white"))
+
+        new_project_action = QAction(qta.icon('fa5s.file-alt', color="white"), "New Project", self)
+        new_project_action.setShortcut("Ctrl+N")
+        new_project_action.triggered.connect(self.new_project)
+        file_menu.addAction(new_project_action)
+        
+        open_project_action = QAction(qta.icon('fa5s.folder-open', color="white"), "Open Project", self)
+        open_project_action.setShortcut("Ctrl+O")
+        open_project_action.triggered.connect(self.open_project)
+        file_menu.addAction(open_project_action)
+
+        import_wfwf_action = QAction(qta.icon('fa5s.file-import', color="white"), "Import from WFWF", self)
+        import_wfwf_action.triggered.connect(self.import_from_wfwf)
+        file_menu.addAction(import_wfwf_action)
+
+        file_menu.addSeparator()
+        
+        save_action = QAction(qta.icon('fa5s.save', color="white"), "Save Project", self)
+        save_action.setShortcut("Ctrl+S")
+        save_action.triggered.connect(self.main_window.save_project)
+        file_menu.addAction(save_action)
+        
+        save_as_action = QAction(qta.icon('fa5s.download', color="white"), "Save Project As...", self)
+        save_as_action.setShortcut("Ctrl+Shift+S")
+        save_as_action.triggered.connect(self.save_project_as)
+        file_menu.addAction(save_as_action)
+        
+        file_menu.addSeparator()
+        
+        home_action = QAction(qta.icon('fa5s.home', color="white"), "Go to Home", self)
+        home_action.triggered.connect(self.go_to_home)
+        file_menu.addAction(home_action)
+
+    def new_project(self):
+        from utils.project_processing import new_project
+        new_project(self)
+
+    def open_project(self):
+        from utils.project_processing import open_project
+        open_project(self)
+
+    def import_from_wfwf(self):
+        from utils.project_processing import import_from_wfwf
+        import_from_wfwf(self)
+
+    def correct_filenames(self, directory):
+        from utils.project_processing import correct_filenames
+        return correct_filenames(directory)
+
+    def go_to_home(self):
+        from main import Home
+        self.home = Home()
+        self.home.show()
+        self.main_window.close()
+    
+    def save_project_as(self):
+        """Handle Save As functionality"""
+        options = QFileDialog.Options()
+        file_path, _ = QFileDialog.getSaveFileName(
+            self, 
+            "Save Project As", 
+            "", 
+            "Manga Translation Project (*.mmtl)", 
+            options=options
+        )
+        
+        if file_path:
+            if not file_path.endswith('.mmtl'):
+                file_path += '.mmtl'
+            self.main_window.mmtl_path = file_path
+            self.main_window.save_project()  # Reuse existing save logic with new path
 
 class CustomProgressBar(QProgressBar):
     def __init__(self, parent=None):
