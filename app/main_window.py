@@ -4,11 +4,13 @@ from PyQt5.QtCore import Qt, QDateTime, QTimer, QSettings, QRectF, QEvent
 from PyQt5.QtGui import QPixmap, QKeySequence, QFontMetrics
 import qtawesome as qta
 from core.ocr_processor import OCRProcessor
-from utils.file_io import export_ocr_results, import_translation_file
+from utils.file_io import export_ocr_results, import_translation_file, export_rendered_images
 from core.data_processing import group_and_merge_text
 from app.widgets import ResizableImageLabel, CustomScrollArea, TextEditDelegate, MenuBar
 from utils.settings import SettingsDialog
-from core.translations import translate_with_gemini
+from core.translations import translate_with_gemini, generate_for_translate_content, import_translation_file_content
+from assets.styles import (COLORS, MAIN_STYLESHEET, IV_BUTTON_STYLES, ADVANCED_CHECK_STYLES, RIGHT_WIDGET_STYLES, SIMPLE_VIEW_STYLES, DELETE_ROW_STYLES,
+                        PROGRESS_STYLES)
 import easyocr, os, gc, json, zipfile, tempfile, shutil, re
 from shutil import copyfile
 
@@ -20,6 +22,7 @@ class MainWindow(QMainWindow):
         self.settings = QSettings("YourCompany", "MangaOCRTool")
         self.min_text_height = int(self.settings.value("min_text_height", 40))
         self.max_text_height = int(self.settings.value("max_text_height", 100))
+        self.min_confidence = float(self.settings.value("min_confidence", 0.2))
         self.distance_threshold = int(self.settings.value("distance_threshold", 100))
         self.combine_action = QAction("Combine Rows", self)
         self.combine_action.triggered.connect(self.combine_selected_rows)
@@ -66,188 +69,10 @@ class MainWindow(QMainWindow):
         main_widget = QWidget()
         main_layout = QHBoxLayout()  # Main horizontal layou
 
-        self.colors = {
-        "background": "#1E1E1E",
-        "surface": "#2D2D2D",
-        "primary": "#3A3A3A",
-        "secondary": "#4A4A4A",
-        "accent": "#007ACC",
-        "text": "#FFFFFF"
-        }
+        self.colors = COLORS
 
         # Apply global stylesheet for the application
-        self.setStyleSheet("""
-            /* General background color */
-            QMainWindow, QWidget {
-                background-color: #1A1A1A;
-                color: #FFFFFF;
-                font-size: 20px;
-            }
-            /* Buttons style */
-            QPushButton {
-                background-color: #3A3A3A;
-                color: #FFFFFF;
-                border: none;
-                padding: 10px;
-                border-radius: 20px; 
-            }
-            QPushButton:hover {
-                background-color: #4A4A4A;
-            }
-            QPushButton:pressed {
-                background-color: #2A2A2A;
-            }
-                           
-            /* Table styling */
-            QTableWidget {
-                background-color: #2D2D2D;
-                gridline-color: "#3A3A3A";
-                border-radius: 50px;
-            }
-            QHeaderView::section {
-                background-color: "#3A3A3A";
-                padding: 12px;
-                border: none;
-            }
-            QTableWidget::item {
-                padding: 2px;
-            }
-            QTableWidget::item.column-6 {  /* Target the 7th column (index 6) */
-                background-color: transparent;
-                border: none;
-            }
-            
-            /* Ensure table buttons use the same style */
-            QTableWidget QPushButton {
-                background-color: #3A3A3A;
-                color: #FFFFFF;
-                border: none;
-                padding: 10px;
-                border-radius: 20px;
-            }
-            QTableWidget QPushButton:hover {
-                background-color: #4A4A4A;
-            }
-            QTableWidget QPushButton:pressed {
-                background-color: #2A2A2A;
-            }
-                           
-            /* Scroll area style */
-            QScrollArea {
-                border: 20px solid #2A2A2A; /* Solid color border */
-                border-top-right-radius: 50px; /* Rounded top-right corner */
-                background-color: #2A2A2A; /* Background color */
-            }
-                           
-            QScrollArea > QWidget > QWidget {  /* Target the viewport */
-                background: transparent;
-            }
-                           
-            /* Progress bar style */
-            QProgressBar {
-                background-color: #2A2A2A;
-                color: #FFFFFF;
-                border: 1px solid #3A3A3A;
-                border-radius: 5px;
-                text-align: center;
-            }
-            QProgressBar::chunk {
-                background-color: #4A4A4A;
-                width: 10px;
-            }
-            
-            /* Tab Widget style */
-            QTabWidget {
-                background-color: #1A1A1A;
-                border: none;
-            }
-            QTabWidget::pane {
-                border: 1px solid #3A3A3A;
-                border-radius: 10px;
-                background-color: #2D2D2D;
-            }
-            QTabBar::tab {
-                background-color: #3A3A3A;
-                color: #FFFFFF;
-                padding: 10px;
-                border: none;
-                border-radius: 5px;
-            }
-            QTabBar::tab:selected {
-                background-color: #4A4A4A;
-                margin-bottom: -1px; /* Ensure selected tab appears above the pane border */
-            }
-            QTabBar::tab:!selected {
-                margin-top: 2px; /* Add some spacing between unselected tabs and the pane */
-            }
-
-            QSplitter {
-                width: 30px;
-            }
-            
-            QTableWidget {
-                background-color: #1A1A1A;
-            }
-            /* Scroll Bar Styling */
-            QScrollBar:vertical {
-                background-color: #1A1A1A;
-                width: 15px;
-                margin: 0px;
-                border-radius: 7px;
-            }
-
-            QScrollBar::handle:vertical {
-                background-color: #4A4A4A;
-                min-height: 30px;
-                border-radius: 7px;
-            }
-
-            QScrollBar::handle:vertical:hover {
-                background-color: #5A5A5A;
-            }
-
-            QScrollBar::handle:vertical:pressed {
-                background-color: #007ACC;
-            }
-
-            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
-                height: 0px;
-            }
-
-            QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {
-                background: none;
-            }
-
-            /* Horizontal Scroll Bar */
-            QScrollBar:horizontal {
-                background-color: #1A1A1A;
-                height: 15px;
-                margin: 0px;
-                border-radius: 7px;
-            }
-
-            QScrollBar::handle:horizontal {
-                background-color: #4A4A4A;
-                min-width: 30px;
-                border-radius: 7px;
-            }
-
-            QScrollBar::handle:horizontal:hover {
-                background-color: #5A5A5A;
-            }
-
-            QScrollBar::handle:horizontal:pressed {
-                background-color: #007ACC;
-            }
-
-            QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {
-                width: 0px;
-            }
-
-            QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal {
-                background: none;
-            }
-        """)
+        self.setStyleSheet(MAIN_STYLESHEET)
 
         # Left Panel
         left_panel = QVBoxLayout()  # Vertical layout for the left panel
@@ -301,59 +126,21 @@ class MainWindow(QMainWindow):
         self.btn_scroll_top = QPushButton(qta.icon('fa5s.arrow-up', color='white'), "")
         self.btn_scroll_top.setFixedSize(50, 50)  # Set fixed size for the button
         self.btn_scroll_top.clicked.connect(lambda: self.scroll_area.verticalScrollBar().setValue(0))
-        self.btn_scroll_top.setStyleSheet("""
-            QPushButton {
-                background-color: #3A3A3A;
-                border: none;
-                border-radius: 25px; 
-            }
-            QPushButton:hover {
-                background-color: #4A4A4A;
-            }
-            QPushButton:pressed {
-                background-color: #2A2A2A;
-            }
-        """)
+        self.btn_scroll_top.setStyleSheet(IV_BUTTON_STYLES)
         scroll_button_layout.addWidget(self.btn_scroll_top)
 
         # Export Manhwa Button
         self.btn_export_manhwa = QPushButton(qta.icon('fa5s.file-archive', color='white'), "Save")
         self.btn_export_manhwa.setFixedSize(120, 50)  # Set fixed size for the button
         self.btn_export_manhwa.clicked.connect(self.export_manhwa)
-        self.btn_export_manhwa.setStyleSheet("""
-            QPushButton {
-                background-color: #3A3A3A;
-                color: #FFFFFF;
-                border: none;
-                border-radius: 25px; 
-                padding: 10px;
-            }
-            QPushButton:hover {
-                background-color: #4A4A4A;
-            }
-            QPushButton:pressed {
-                background-color: #2A2A2A;
-            }
-        """)
+        self.btn_export_manhwa.setStyleSheet(IV_BUTTON_STYLES)
         scroll_button_layout.addWidget(self.btn_export_manhwa)  # Add the button to the layout
 
         # Scroll Bottom Button
         self.btn_scroll_bottom = QPushButton(qta.icon('fa5s.arrow-down', color='white'), "")
         self.btn_scroll_bottom.setFixedSize(50, 50)  # Set fixed size for the button
         self.btn_scroll_bottom.clicked.connect(lambda: self.scroll_area.verticalScrollBar().setValue(self.scroll_area.verticalScrollBar().maximum()))
-        self.btn_scroll_bottom.setStyleSheet("""
-            QPushButton {
-                background-color: #3A3A3A;
-                border: none;
-                border-radius: 25px; 
-            }
-            QPushButton:hover {
-                background-color: #4A4A4A;
-            }
-            QPushButton:pressed {
-                background-color: #2A2A2A;
-            }
-        """)
+        self.btn_scroll_bottom.setStyleSheet(IV_BUTTON_STYLES)
         scroll_button_layout.addWidget(self.btn_scroll_bottom)
 
         # Set the overlay widget to the custom scroll area
@@ -447,43 +234,7 @@ class MainWindow(QMainWindow):
 
         # In the init_ui method, modify the translation_btn_layout section
         self.advanced_mode_check = QCheckBox("Advanced Mode")
-        self.advanced_mode_check.setStyleSheet("""
-            QCheckBox {
-                color: #FFFFFF;
-                font-size: 16px;
-                spacing: 12px;
-                padding: 4px;
-            }
-            QCheckBox::indicator {
-                width: 22px;
-                height: 22px;
-                border-radius: 4px;
-            }
-            QCheckBox::indicator:unchecked {
-                border: 2px solid #3A3A3A;
-                background-color: #2A2A2A;
-            }
-            QCheckBox::indicator:unchecked:hover {
-                border: 2px solid #4A4A4A;
-                background-color: #333333;
-            }
-            QCheckBox::indicator:checked {
-                border: 2px solid #007ACC;
-                background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #0088EE, stop:1 #007ACC);
-                image: url(data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxNCIgaGVpZ2h0PSIxNCIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJub25lIiBzdHJva2U9IiNGRkZGRkYiIHN0cm9rZS13aWR0aD0iMyIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIj48cG9seWxpbmUgcG9pbnRzPSIyMCA2IDkgMTcgNCAxMiI+PC9wb2x5bGluZT48L3N2Zz4=);
-            }
-            QCheckBox::indicator:checked:hover {
-                border: 2px solid #0088EE;
-                background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #0099FF, stop:1 #0088EE);
-            }
-            QCheckBox:disabled {
-                color: #666666;
-            }
-            QCheckBox::indicator:disabled {
-                border: 2px solid #444444;
-                background-color: #333333;
-            }
-        """)
+        self.advanced_mode_check.setStyleSheet(ADVANCED_CHECK_STYLES)
         self.advanced_mode_check.setChecked(False)
         self.advanced_mode_check.setCursor(Qt.PointingHandCursor)  # Changes cursor to hand when hovering
         self.advanced_mode_check.stateChanged.connect(self.toggle_advanced_mode)
@@ -493,27 +244,7 @@ class MainWindow(QMainWindow):
         # Create the right widget and apply specific styles
         right_widget = QWidget()
         right_widget.setLayout(right_panel)
-        right_widget.setStyleSheet("""
-            QWidget {
-                background-color: #2A2A2A;
-                border: none;
-                border-top-left-radius: 50px; /* Rounded top-left corner */
-            }
-            /* Buttons style */
-            QPushButton {
-                background-color: #3A3A3A;
-                color: #FFFFFF;
-                border: none;
-                padding: 10px;
-                border-radius: 20px; 
-            }
-            QPushButton:hover {
-                background-color: #4A4A4A;
-            }
-            QPushButton:pressed {
-                background-color: #2A2A2A;
-            }
-        """)
+        right_widget.setStyleSheet(RIGHT_WIDGET_STYLES)
 
         # Splitter to divide left and right panels
         splitter = QSplitter(Qt.Horizontal)
@@ -533,6 +264,7 @@ class MainWindow(QMainWindow):
             self.update_shortcut()
             self.min_text_height = int(self.settings.value("min_text_height", 40))
             self.max_text_height = int(self.settings.value("max_text_height", 100))
+            self.min_confidence = float(self.settings.value("min_confidence", 0.2))
             self.distance_threshold = int(self.settings.value("distance_threshold", 100))
 
     def process_mmtl(self, mmtl_path, temp_dir):
@@ -677,10 +409,11 @@ class MainWindow(QMainWindow):
 
         # Start OCR for the current image
         self.ocr_processor = OCRProcessor(
-            image_path, 
-            self.reader, 
-            min_text_height=self.min_text_height,  # Pass new setting
-            max_text_height=self.max_text_height
+            image_path,
+            self.reader,
+            min_text_height=self.min_text_height,
+            max_text_height=self.max_text_height,
+            min_confidence=self.min_confidence  # Add this line
         )
         self.ocr_processor.ocr_progress.connect(self.update_ocr_progress_for_image)
         self.ocr_processor.ocr_finished.connect(self.handle_ocr_results)
@@ -691,18 +424,10 @@ class MainWindow(QMainWindow):
         total_images = len(self.image_paths)
         if total_images == 0:
             return  # Prevent division by zero
-
-        # Calculate per-image contribution (80% divided by number of images)
-        per_image_contribution = 80.0 / total_images
-
-        # Calculate progress within the current image (0-100 to 0.0-1.0)
-        current_image_progress = progress / 100.0
-
-        # Total progress from completed images plus current image progress
-        overall_progress = 20 + (self.current_image_index * per_image_contribution) + (current_image_progress * per_image_contribution)
-
-        # Ensure progress does not exceed 100%
-        self.target_progress = min(int(overall_progress), 100)
+        per_image_contribution = 80.0 / total_images # Calculate per-image contribution (80% divided by number of images)
+        current_image_progress = progress / 100.0 # Calculate progress within the current image (0-100 to 0.0-1.0)
+        overall_progress = 20 + (self.current_image_index * per_image_contribution) + (current_image_progress * per_image_contribution) # Total progress from completed images plus current image progress
+        self.target_progress = min(int(overall_progress), 100) # Ensure progress does not exceed 100%
 
     def update_progress_smoothly(self):
         # Calculate required increment based on remaining progress and time
@@ -793,35 +518,13 @@ class MainWindow(QMainWindow):
 
             # Text Frame
             text_frame = QFrame()
-            text_frame.setStyleSheet("""
-                QFrame {
-                    background-color: #3A3A3A;
-                    border-radius: 35px;
-                    padding: 10px;
-                    margin: 0;
-                }
-            """)
+            text_frame.setStyleSheet(SIMPLE_VIEW_STYLES)
             text_layout = QVBoxLayout(text_frame)
             text_layout.setContentsMargins(0, 0, 0, 0)
 
             # Text Edit
             text_edit = QTextEdit(result['text'])
-            text_edit.setStyleSheet("""
-                QTextEdit {
-                    color: white;
-                    font-size: 20px;
-                    background-color: transparent;
-                    border: 1px solid #4A4A4A;
-                    border-radius: 25px;
-                    padding: 5px;
-                }
-                QTextEdit:hover {
-                    border: 1px solid #007ACC;
-                }
-                QTextEdit:focus {
-                    border: 2px solid #007ACC;
-                }
-            """)
+            text_edit.setStyleSheet(SIMPLE_VIEW_STYLES)
             text_edit.setLineWrapMode(QTextEdit.WidgetWidth)
             text_edit.textChanged.connect(lambda te=text_edit, index=idx: self.on_simple_text_changed(index, te.toPlainText()))
             text_layout.addWidget(text_edit)
@@ -829,19 +532,7 @@ class MainWindow(QMainWindow):
             # Delete Button
             delete_btn = QPushButton(qta.icon('fa5s.trash-alt', color='red'), "")
             delete_btn.setFixedSize(100, 100)
-            delete_btn.setStyleSheet("""
-                QPushButton {
-                    background-color: #3A3A3A;
-                    border: none;
-                    border-radius: 34px;
-                }
-                QPushButton:hover {
-                    background-color: #4A4A4A;
-                }
-                QPushButton:pressed {
-                    background-color: #2A2A2A;
-                }
-            """)
+            delete_btn.setStyleSheet(SIMPLE_VIEW_STYLES)
             row_number = result['row_number']
             delete_btn.clicked.connect(lambda _, rn=result['row_number']: self.delete_row(rn))
 
@@ -961,34 +652,7 @@ class MainWindow(QMainWindow):
             msg.setInformativeText("This action will permanently delete the selected text entry. Deleted content cannot be recovered.\n\nDo you want to continue?")
 
             # Apply consistent styling
-            msg.setStyleSheet(f"""
-                QMessageBox {{
-                    background-color: {self.colors['background']};
-                    color: {self.colors['text']};
-                    font-size: 16px;
-                }}
-                QLabel {{
-                    color: {self.colors['text']};
-                }}
-                QCheckBox {{
-                    color: {self.colors['text']};
-                    spacing: 8px;
-                }}
-                QCheckBox::indicator {{
-                    width: 18px;
-                    height: 18px;
-                }}
-                QPushButton {{
-                    background-color: {self.colors['primary']};
-                    color: {self.colors['text']};
-                    min-width: 80px;
-                    padding: 8px;
-                    border-radius: 4px;
-                }}
-                QPushButton:hover {{
-                    background-color: {self.colors['secondary']};
-                }}
-            """)
+            msg.setStyleSheet(DELETE_ROW_STYLES)
 
             # Add "Don't show again" checkbox
             dont_show_cb = QCheckBox("Remember my choice and do not ask again", msg)
@@ -1123,7 +787,7 @@ class MainWindow(QMainWindow):
             return
             
         # Generate for-translate format
-        content = self.generate_for_translate_content()
+        content = generate_for_translate_content(self)
 
         # Debug print: Show the content being sent to Gemini
         print("\n===== DEBUG: Content sent to Gemini =====\n")
@@ -1144,123 +808,14 @@ class MainWindow(QMainWindow):
         except Exception as e:
             QMessageBox.critical(self, "Error", str(e))
 
-    def generate_for_translate_content(self):
-        """Generate Markdown content in for-translate format."""
-        content = "<!-- type: for-translate -->\n\n"
-        grouped_results = {}
-        extensions = set()
-
-        for result in self.ocr_results:
-            filename = result['filename']
-            ext = os.path.splitext(filename)[1].lstrip('.').lower()
-            extensions.add(ext)
-            text = result['text']
-            row_number = result['row_number']
-            
-            if filename not in grouped_results:
-                grouped_results[filename] = []
-            grouped_results[filename].append((text, row_number))
-
-        if len(extensions) == 1:
-            content += f"<!-- ext: {list(extensions)[0]} -->\n\n"
-
-        for idx, (filename, texts) in enumerate(grouped_results.items()):
-            if idx > 0:
-                content += "\n\n"
-            content += f"<!-- file: {filename} -->\n\n"
-            sorted_texts = sorted(texts, key=lambda x: x[1])
-            for text, row_number in sorted_texts:
-                lines = text.split('\n')
-                for line in lines:
-                    content += f"{line.strip()}\n"
-                    content += f"-/{row_number}\\-\n"
-
-        return content
-
     def import_translated_content(self, content):
         """Import translated content back into OCR results."""
         try:
             # Reuse existing import logic
-            self.import_translation_file_content(content)
+            import_translation_file_content(self, content)
             self.update_results_table()
         except Exception as e:
             raise Exception(f"Failed to import translation: {str(e)}")
-        
-    def import_translation_file_content(self, content):
-        """Modified version of import_translation that works with direct content instead of file path."""
-        try:
-            # Debug print: Show the content being parsed
-            print("\n===== DEBUG: Content being parsed =====\n")
-            print(content)
-            print("\n======================================\n")
-            if '<!-- type: for-translate -->' not in content:
-                raise ValueError("Unsupported MD format - missing type comment.")
-
-            translations = {}
-            current_file = None
-            file_texts = {}
-            current_entry = []  # Buffer for current text entry
-            row_numbers = []
-
-            # Parse filename groups and entries
-            for line in content.split('\n'):
-                line = line.strip()
-                if line.startswith('<!-- file:') and line.endswith('-->'):
-                    # Save previous file's entries
-                    if current_file is not None and current_entry:
-                        file_texts[current_file].append(('\n'.join(current_entry), row_numbers))
-                        current_entry = []
-                        row_numbers = []
-                    # Extract filename
-                    current_file = line[10:-3].strip()
-                    file_texts[current_file] = []
-                elif line.startswith('-/') and line.endswith('\\-'):
-                    # Extract row number from marker (e.g., "-/3\\-")
-                    if current_entry:
-                        row_number_str = line[2:-2].strip()
-                        try:
-                            row_number = int(row_number_str)
-                        except ValueError:
-                            row_number = 0  # Default to 0 if parsing fails
-                        row_numbers.append(row_number)
-                        # Save current entry
-                        file_texts[current_file].append(('\n'.join(current_entry), row_numbers))
-                        current_entry = []
-                        row_numbers = []
-                elif current_file is not None:
-                    # Skip empty lines between entries
-                    if line or current_entry:
-                        current_entry.append(line)
-
-            # Add the last entry if buffer isn't empty
-            if current_file is not None and current_entry:
-                file_texts[current_file].append(('\n'.join(current_entry), row_numbers))
-
-            # Debug print: Show parsed structure
-            print("\n===== DEBUG: Parsed structure =====\n")
-            for filename, entries in file_texts.items():
-                print(f"File: {filename}")
-                for entry in entries:
-                    print(f"  - Text: {entry[0]}")
-                    print(f"    Row numbers: {entry[1]}")
-            print("\n==================================\n")
-
-            # Rebuild translations in original OCR order
-            translation_index = {k: 0 for k in file_texts.keys()}
-            for result in self.ocr_results:
-                filename = result['filename']
-                if filename in file_texts and translation_index[filename] < len(file_texts[filename]):
-                    translated_text, row_numbers = file_texts[filename][translation_index[filename]]
-                    result['text'] = translated_text
-                    result['row_number'] = row_numbers[0]  # Update row number
-                    translation_index[filename] += 1
-                    print(f"DEBUG: Updated {filename} row {row_numbers[0]} with translation")
-
-                else:
-                    print(f"Warning: No translation found for entry in '{filename}'")
-
-        except Exception as e:
-            raise Exception(f"Failed to parse translated content: {str(e)}")
 
     def apply_translation(self):
         """Apply translations to images based on OCR results."""
@@ -1288,72 +843,7 @@ class MainWindow(QMainWindow):
         import_translation_file(self)
 
     def export_manhwa(self):
-        """Export images with applied translations directly from QGraphicsView scenes."""
-        if not self.image_paths:
-            QMessageBox.warning(self, "Warning", "No images available for export.")
-            return
-        # Suspend updates during export
-        for i in range(self.scroll_layout.count()):
-            widget = self.scroll_layout.itemAt(i).widget()
-            if isinstance(widget, ResizableImageLabel):
-                widget.setUpdatesEnabled(False)
-
-        import tempfile, shutil
-        from PyQt5.QtGui import QImage, QPainter
-        from PyQt5.QtCore import Qt
-
-        temp_dir = tempfile.mkdtemp()
-        translated_images = []
-
-        try:
-            for i in range(self.scroll_layout.count()):
-                widget = self.scroll_layout.itemAt(i).widget()
-                if isinstance(widget, ResizableImageLabel):
-                    scene = widget.scene()
-                    if not scene or scene.isActive() is False:
-                        print(f"Skipping invalid scene for {widget.filename}")
-                        continue  # Skip invalid scenes
-                    
-                    img_size = widget.original_pixmap.size()
-                    image = QImage(img_size, QImage.Format_ARGB32)
-                    image.fill(Qt.transparent)
-                    
-                    painter = QPainter()
-                    try:
-                        if painter.begin(image):
-                            scene.render(painter, 
-                                    QRectF(image.rect()),
-                                    QRectF(scene.sceneRect()),
-                                    Qt.KeepAspectRatio)
-                        else:
-                            print(f"Failed to initialize painter for {widget.filename}")
-                            continue
-                    finally:
-                        painter.end()  # Ensure painter is always released
-
-                    # Save rendered image
-                    temp_path = os.path.join(temp_dir, widget.filename)
-                    image.save(temp_path)
-                    translated_images.append((temp_path, widget.filename))
-
-            # Package images into ZIP
-            from utils.file_io import export_translated_images_to_zip
-            export_path, success = export_translated_images_to_zip(translated_images)
-
-            if success:
-                QMessageBox.information(self, "Success", f"Exported to:\n{export_path}")
-            else:
-                QMessageBox.critical(self, "Error", "Export failed")
-        except Exception as e:
-            QMessageBox.critical(self, "Render Error", f"Failed to render image: {str(e)}")
-            import traceback
-            traceback.print_exc()
-        finally:
-            for i in range(self.scroll_layout.count()):
-                widget = self.scroll_layout.itemAt(i).widget()
-                if isinstance(widget, ResizableImageLabel):
-                    widget.setUpdatesEnabled(True)
-            shutil.rmtree(temp_dir, ignore_errors=True)
+        export_rendered_images(self)
 
     def save_project(self):
         # Update master.json in temp dir (save as list directly, not wrapped in 'ocr_results' key)

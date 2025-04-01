@@ -2,6 +2,8 @@ import os
 import ast
 import json
 from PyQt5.QtWidgets import QMessageBox, QFileDialog
+from PyQt5.QtCore import QRectF
+from app.widgets import ResizableImageLabel
 import zipfile
 
 def export_translated_images_to_zip(image_paths_with_names):
@@ -210,3 +212,71 @@ def import_translation_file(self):
             self, "Error",
             f"Failed to import translation:\n{str(e)}"
         )
+
+def export_rendered_images(self):
+    """Export images with applied translations directly from QGraphicsView scenes."""
+    if not self.image_paths:
+        QMessageBox.warning(self, "Warning", "No images available for export.")
+        return
+    # Suspend updates during export
+    for i in range(self.scroll_layout.count()):
+        widget = self.scroll_layout.itemAt(i).widget()
+        if isinstance(widget, ResizableImageLabel):
+            widget.setUpdatesEnabled(False)
+
+    import tempfile, shutil
+    from PyQt5.QtGui import QImage, QPainter
+    from PyQt5.QtCore import Qt
+
+    temp_dir = tempfile.mkdtemp()
+    translated_images = []
+
+    try:
+        for i in range(self.scroll_layout.count()):
+            widget = self.scroll_layout.itemAt(i).widget()
+            if isinstance(widget, ResizableImageLabel):
+                scene = widget.scene()
+                if not scene or scene.isActive() is False:
+                    print(f"Skipping invalid scene for {widget.filename}")
+                    continue  # Skip invalid scenes
+                
+                img_size = widget.original_pixmap.size()
+                image = QImage(img_size, QImage.Format_ARGB32)
+                image.fill(Qt.transparent)
+                
+                painter = QPainter()
+                try:
+                    if painter.begin(image):
+                        scene.render(painter, 
+                                QRectF(image.rect()),
+                                QRectF(scene.sceneRect()),
+                                Qt.KeepAspectRatio)
+                    else:
+                        print(f"Failed to initialize painter for {widget.filename}")
+                        continue
+                finally:
+                    painter.end()  # Ensure painter is always released
+
+                # Save rendered image
+                temp_path = os.path.join(temp_dir, widget.filename)
+                image.save(temp_path)
+                translated_images.append((temp_path, widget.filename))
+
+        # Package images into ZIP
+        from utils.file_io import export_translated_images_to_zip
+        export_path, success = export_translated_images_to_zip(translated_images)
+
+        if success:
+            QMessageBox.information(self, "Success", f"Exported to:\n{export_path}")
+        else:
+            QMessageBox.critical(self, "Error", "Export failed")
+    except Exception as e:
+        QMessageBox.critical(self, "Render Error", f"Failed to render image: {str(e)}")
+        import traceback
+        traceback.print_exc()
+    finally:
+        for i in range(self.scroll_layout.count()):
+            widget = self.scroll_layout.itemAt(i).widget()
+            if isinstance(widget, ResizableImageLabel):
+                widget.setUpdatesEnabled(True)
+        shutil.rmtree(temp_dir, ignore_errors=True)
