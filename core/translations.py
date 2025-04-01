@@ -1,22 +1,46 @@
 # gemini_handler.py
 import google.generativeai as genai
 from PyQt5.QtWidgets import QMessageBox
+from PyQt5.QtCore import QThread, pyqtSignal
 import os
 
-def translate_with_gemini(api_key, text, model_name="gemini-2.0-flash", target_lang="English"):
-    """Send text to Gemini API for translation."""
-    try:
-        genai.configure(api_key=api_key)
-        model = genai.GenerativeModel(model_name)
-        
-        prompt = f"""translate and change only the korean text to {target_lang}, keep everything else.
+class TranslationThread(QThread):
+    translation_finished = pyqtSignal(str)
+    translation_failed = pyqtSignal(str)
+    debug_print = pyqtSignal(str)
+    translation_progress = pyqtSignal(str)  # New signal for real-time updates
 
-        {text}"""
-        
-        response = model.generate_content(prompt)
-        return response.text
-    except Exception as e:
-        raise Exception(f"Gemini API Error: {str(e)}")
+    def __init__(self, api_key, text, model_name="gemini-2.0-flash", target_lang="English", parent=None):
+        super().__init__(parent)
+        self.api_key = api_key
+        self.text = text
+        self.model_name = model_name
+        self.target_lang = target_lang
+
+    def run(self):
+        try:
+            genai.configure(api_key=self.api_key)
+            model = genai.GenerativeModel(self.model_name)
+            
+            prompt = f"""translate and change only the korean text to {self.target_lang}, keep everything else.
+
+            {self.text}"""
+            
+            # Use streaming generation instead of single response
+            response_text = ""
+            
+            # Use streaming generation for real-time updates
+            for response in model.generate_content(prompt, stream=True):
+                if response.text:
+                    chunk = response.text
+                    response_text += chunk
+                    self.debug_print.emit(response_text)  # Emit current accumulated response
+                    self.translation_progress.emit(chunk)  # Emit just the new chunk
+            
+            # When stream is complete, emit the final full response
+            self.translation_finished.emit(response_text)
+        except Exception as e:
+            self.translation_failed.emit(str(e))
     
 def generate_for_translate_content(self):
     """Generate Markdown content in for-translate format."""
