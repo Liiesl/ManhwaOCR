@@ -734,97 +734,110 @@ class MainWindow(QMainWindow):
     def delete_row(self, row_number_to_delete):
         # Find the index corresponding to the row_number
         target_index = -1
+        target_result = None # Store the result for filename lookup
         for idx, result in enumerate(self.ocr_results):
             if result.get('row_number') == row_number_to_delete:
                 target_index = idx
+                target_result = result # Keep track of the result dict
                 break
-        
-        if target_index == -1:
+
+        if target_index == -1 or target_result is None:
             print(f"Warning: Row number {row_number_to_delete} not found in ocr_results.")
             return # Row not found
 
-        # Confirmation dialog logic (remains the same)
+        # --- Check if already marked as deleted ---
+        if target_result.get('is_deleted', False):
+            print(f"Info: Row number {row_number_to_delete} is already marked as deleted.")
+            # Optionally, ensure it's visually removed if somehow still present
+            # (This part handles potential inconsistencies)
+            deleted_filename = target_result.get('filename')
+            if deleted_filename:
+                for i in range(self.scroll_layout.count()):
+                    widget = self.scroll_layout.itemAt(i).widget()
+                    if isinstance(widget, ResizableImageLabel) and widget.filename == deleted_filename:
+                        widget.remove_text_box_by_row(row_number_to_delete) # Attempt removal again
+                        break
+            return # No further action needed if already marked
+
+        # --- Confirmation Dialog Logic (remains the same) ---
         show_warning = self.settings.value("show_delete_warning", "true") == "true"
         proceed = True
-
         if show_warning:
+            # ... (Confirmation dialog code remains unchanged) ...
             msg = QMessageBox()
             msg.setIcon(QMessageBox.Warning)
             msg.setWindowTitle("Confirm Deletion Marking")
-            # Modify text slightly to reflect marking instead of deletion
             msg.setText("<b>Mark for Deletion Warning</b>")
             msg.setInformativeText("This action will mark the selected text entry for deletion. It will be hidden from view and removed during translation application.\n\nDo you want to continue?")
-
             msg.setStyleSheet(DELETE_ROW_STYLES)
             dont_show_cb = QCheckBox("Remember my choice and do not ask again", msg)
             msg.setCheckBox(dont_show_cb)
             msg.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
             msg.setDefaultButton(QMessageBox.No)
             msg.setWindowIcon(qta.icon('fa5s.exclamation-triangle', color='orange'))
-
             response = msg.exec_()
-
             if dont_show_cb.isChecked():
                 self.settings.setValue("show_delete_warning", "false")
-
             proceed = response == QMessageBox.Yes
 
         if not proceed:
             return
 
-        # --- Core Change: Mark as deleted instead of removing ---
-        if 0 <= target_index < len(self.ocr_results):
-            self.ocr_results[target_index]['is_deleted'] = True
-            print(f"Marked row number {row_number_to_delete} (index {target_index}) as deleted.")
-            # --- Check if the deleted row was the selected one ---
-            was_selected = (row_number_to_delete == self.current_selected_row)
-            # Refresh UI (which will now filter out deleted items)
-            self.update_results_table()
-            # Also update the image view if text boxes are currently shown
-            self.apply_translation_to_images() # Renamed for clarity
+        # --- Core Change: Mark as deleted ---
+        self.ocr_results[target_index]['is_deleted'] = True
+        print(f"Marked row number {row_number_to_delete} (index {target_index}) as deleted.")
+        deleted_filename = target_result.get('filename') # Get filename from the result
 
+        # --- Check if the deleted row was the one currently selected for styling ---
+        was_selected = (row_number_to_delete == self.current_selected_row)
+        if was_selected:
+            print(f"Deselecting deleted row {row_number_to_delete} and hiding style panel.")
+            self.current_selected_row = None
+            self.current_selected_image_label = None
+            self.selected_text_box_item = None
+            self.style_panel.clear_and_hide()
+
+        # --- NEW: Immediately remove the visual item from the correct ResizableImageLabel ---
+        if deleted_filename:
+            found_label = False
+            for i in range(self.scroll_layout.count()):
+                widget = self.scroll_layout.itemAt(i).widget()
+                if isinstance(widget, ResizableImageLabel) and widget.filename == deleted_filename:
+                    print(f"Found ResizableImageLabel for {deleted_filename}. Requesting visual removal of row {row_number_to_delete}.")
+                    widget.remove_text_box_by_row(row_number_to_delete)
+                    found_label = True
+                    break # Found the label, no need to continue loop
+            if not found_label:
+                    print(f"Warning: Could not find ResizableImageLabel widget for filename {deleted_filename} to perform visual removal.")
         else:
-            print(f"Error: Could not mark row number {row_number_to_delete}. Index {target_index} out of bounds.")
+                print(f"Warning: Could not get filename for deleted row {row_number_to_delete} to perform visual removal.")
+
+        # --- Refresh UI (table/simple view) ---
+        self.update_results_table() # This will filter out the deleted item from the views
+
 
     def apply_translation_to_images(self):
         """Apply translations/visibility changes to images based on OCR results."""
         grouped_results = {}
-        active_rows_by_file = {}
+        # active_rows_by_file = {} # No longer needed for panel hiding logic here
         for result in self.ocr_results:
             filename = result['filename']
             row_number = result.get('row_number', None)
-            is_deleted = result.get('is_deleted', False)
+            # is_deleted = result.get('is_deleted', False) # Deletion check happens in ResizableImageLabel.apply_translation now
 
             if filename not in grouped_results:
                 grouped_results[filename] = {}
-                active_rows_by_file[filename] = set()
+                # active_rows_by_file[filename] = set() # No longer needed
             if row_number is not None:
                 # Include the 'custom_style' if it exists
                 grouped_results[filename][row_number] = result # Pass the whole dict
-                if not is_deleted:
-                    active_rows_by_file[filename].add(row_number)
-
-        something_was_selected = self.selected_text_box_item is not None
-        panel_needs_hide = False
 
         for i in range(self.scroll_layout.count()):
             widget = self.scroll_layout.itemAt(i).widget()
             if isinstance(widget, ResizableImageLabel):
                 image_filename = widget.filename
                 if image_filename in grouped_results:
-                    # Pass the default style dictionary along with the results
                     widget.apply_translation(grouped_results[image_filename], DEFAULT_TEXT_STYLE)
-
-                if something_was_selected and widget == self.current_selected_image_label:
-                    current_file_active_rows = active_rows_by_file.get(image_filename, set())
-                    if self.current_selected_row not in current_file_active_rows:
-                        panel_needs_hide = True
-
-        if panel_needs_hide:
-            self.current_selected_row = None
-            self.current_selected_image_label = None
-            self.selected_text_box_item = None
-            self.style_panel.clear_and_hide()
 
     def on_cell_changed(self, row, column):
         # Get the original row number from the item's UserRole data

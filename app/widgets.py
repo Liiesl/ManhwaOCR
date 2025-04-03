@@ -585,6 +585,27 @@ class ResizableImageLabel(QGraphicsView):
         # The removal/hiding will happen when MainWindow calls
         # apply_translation_to_images again after marking the item.
 
+    def remove_text_box_by_row(self, row_number):
+        """Finds and removes a specific TextBoxItem from the scene and internal list."""
+        item_to_remove = None
+        for tb in self.text_boxes:
+            if tb.row_number == row_number:
+                item_to_remove = tb
+                break
+
+        if item_to_remove:
+            print(f"Attempting immediate removal of TextBoxItem (row {row_number}) from scene in {self.filename}")
+            # Call the item's cleanup method, which should handle scene removal and signal disconnection
+            item_to_remove.cleanup()
+            # Remove from the internal list
+            try:
+                self.text_boxes.remove(item_to_remove)
+                print(f"Successfully removed TextBoxItem (row {row_number}) from internal list.")
+            except ValueError:
+                 print(f"Warning: TextBoxItem (row {row_number}) was already removed from the list?")
+        else:
+            print(f"Warning: Tried to remove TextBoxItem visually (row {row_number}) but it was not found in {self.filename}'s list.")
+
     def cleanup(self):
         """Clean up resources before removal."""
         # Remove handles
