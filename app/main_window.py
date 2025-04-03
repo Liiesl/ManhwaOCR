@@ -1,19 +1,20 @@
-from PyQt5.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QSizePolicy, QFrame, QScrollArea, QStackedWidget, QCheckBox, QPushButton, 
-                             QTableWidget, QTableWidgetItem, QMessageBox, QSplitter, QHeaderView, QAction, QTextEdit)
+from PyQt5.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QSizePolicy, QFrame, QScrollArea, QStackedWidget, 
+                             QCheckBox, QPushButton, QTableWidget, QTableWidgetItem, QMessageBox, QSplitter, QHeaderView, 
+                             QAction, QTextEdit)
 from PyQt5.QtCore import Qt, QSettings, QEvent
-from PyQt5.QtGui import QPixmap, QKeySequence, QFontMetrics
+from PyQt5.QtGui import QPixmap, QKeySequence, QFontMetrics, QColor
 import qtawesome as qta
 from core.ocr_processor import OCRProcessor
 from utils.file_io import export_ocr_results, import_translation_file, export_rendered_images
 from core.data_processing import group_and_merge_text
 from app.widgets import ResizableImageLabel, CustomScrollArea, TextEditDelegate
 from app.widgets_2 import CustomProgressBar, MenuBar
+from app.custom_bubble import TextBoxStylePanel
 from utils.settings import SettingsDialog
 from core.translations import TranslationThread, generate_for_translate_content, import_translation_file_content
 from assets.styles import (COLORS, MAIN_STYLESHEET, IV_BUTTON_STYLES, ADVANCED_CHECK_STYLES, RIGHT_WIDGET_STYLES, SIMPLE_VIEW_STYLES, DELETE_ROW_STYLES,
-                        PROGRESS_STYLES)
-import easyocr, os, gc, json, zipfile, tempfile, shutil, re
-from shutil import copyfile
+                        PROGRESS_STYLES, DEFAULT_TEXT_STYLE, get_style_diff) 
+import easyocr, os, gc, json, zipfile
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -57,7 +58,11 @@ class MainWindow(QMainWindow):
 
         self.results_table.installEventFilter(self)
 
-        self.mmtl_path = None  # Add this line to track current project path
+        self.mmtl_path = None  # Add this line to track current project pathl
+        self.current_selected_row = None  # Track row number
+        self.current_selected_image_label = None  # Track image label
+        self.selected_text_box_item = None # <--- Add this to track the actual item
+        self.style_panel.style_changed.connect(self.update_text_box_style)
 
     def init_ui(self):
         self.menuBar = MenuBar(self)  # From new file
@@ -179,7 +184,15 @@ class MainWindow(QMainWindow):
         button_layout.addLayout(file_button_layout)
         right_panel.addLayout(button_layout)
 
-        # Replace the existing results_table addition with:
+        # Create a horizontal splitter to hold the style panel and the main content stack
+        self.right_content_splitter = QSplitter(Qt.Horizontal)
+        
+        # Create the Text Box Style Panel
+        self.style_panel = TextBoxStylePanel(default_style=DEFAULT_TEXT_STYLE) # Pass defaults
+        self.style_panel.hide() # Initially hidden
+        self.right_content_splitter.addWidget(self.style_panel) # Add panel to the left
+        
+        # OCR Results Table wrapped in a container widget
         self.right_content_stack = QStackedWidget()
         
         # OCR Results Table
@@ -215,8 +228,25 @@ class MainWindow(QMainWindow):
         # Add both views to stack
         self.right_content_stack.addWidget(self.simple_scroll)
         self.right_content_stack.addWidget(self.results_table)
+        
+        # Create a container for the stack widget with stretch capabilities
+        stack_container = QWidget()
+        stack_layout = QVBoxLayout(stack_container)
+        stack_layout.setContentsMargins(0, 0, 0, 0)
+        stack_layout.addWidget(self.right_content_stack)
+        
+        # Add the stack container to the splitter
+        self.right_content_splitter.addWidget(stack_container)
+        
+        # Set stretch factors for splitter
+        self.right_content_splitter.setStretchFactor(0, 0)  # Style panel - don't stretch
+        self.right_content_splitter.setStretchFactor(1, 1)  # Content - stretch to fill available space
+        
+        # Add the splitter to the right panel
+        right_panel.addWidget(self.right_content_splitter, 1)  # Give it a stretch factor
 
-        right_panel.addWidget(self.right_content_stack)
+        # Save the current splitter sizes when the style panel is shown
+        self.style_panel_size = None
 
         # Modify translation button layout
         translation_btn_layout = QHBoxLayout()
@@ -311,10 +341,113 @@ class MainWindow(QMainWindow):
             filename = os.path.basename(image_path)
             label = ResizableImageLabel(pixmap, filename)
             label.textBoxDeleted.connect(self.delete_row)
+            label.textBoxSelected.connect(self.handle_text_box_selected)  # Connect signal
             self.scroll_layout.addWidget(label)
 
         # Update UI components immediately
         self.update_results_table()  # <-- Add this line
+    
+    def handle_text_box_selected(self, row_number, image_label, selected):
+        """Handles selection changes from ANY ResizableImageLabel."""
+        print(f"handle_text_box_selected called: row={row_number}, selected={selected}, label={image_label.filename}")
+
+        if selected:
+            # --- Find the item and update panel ---
+            self.current_selected_row = row_number
+            self.current_selected_image_label = image_label
+            self.selected_text_box_item = None
+            for tb in image_label.get_text_boxes():
+                if tb.row_number == row_number:
+                    self.selected_text_box_item = tb
+                    break
+
+            if self.selected_text_box_item:
+                # Fetch current style (including custom overrides) from the item or ocr_results
+                current_style = self.get_style_for_row(row_number)
+                print(f"Found TextBoxItem for row {row_number}. Updating style panel with: {current_style}")
+                self.style_panel.update_style_panel(current_style) # Pass the full style dict
+                self.style_panel.show() # Ensure panel is visible
+            else:
+                print(f"ERROR: Could not find TextBoxItem for row {row_number} in label {image_label.filename}")
+                self.style_panel.clear_and_hide()
+
+            # --- Deselect in other images (existing logic) ---
+            for i in range(self.scroll_layout.count()):
+                widget = self.scroll_layout.itemAt(i).widget()
+                if isinstance(widget, ResizableImageLabel) and widget != image_label:
+                    widget.deselect_all_text_boxes()
+
+        else:
+            # --- Hide panel if the deselected item was the active one ---
+            if row_number == self.current_selected_row and image_label == self.current_selected_image_label:
+                print(f"Deselecting the active item (row {row_number}). Hiding style panel.")
+                self.current_selected_row = None
+                self.current_selected_image_label = None
+                self.selected_text_box_item = None
+                self.style_panel.clear_and_hide()
+
+    def get_style_for_row(self, row_number):
+        """Gets the combined style (default + custom) for a given row."""
+        # Start with a copy of the default style
+        # Important: Need to convert default color strings back to QColor for comparison/use
+        style = {}
+        for k, v in DEFAULT_TEXT_STYLE.items():
+             if k in ['bg_color', 'border_color', 'text_color']:
+                 style[k] = QColor(v)
+             else:
+                 style[k] = v
+
+        # Find the result and apply custom overrides
+        for result in self.ocr_results:
+            if result.get('row_number') == row_number:
+                custom_style = result.get('custom_style', {})
+                for k, v in custom_style.items():
+                     if k in ['bg_color', 'border_color', 'text_color']:
+                         style[k] = QColor(v) # Convert stored string to QColor
+                     else:
+                         style[k] = v
+                break # Found the result
+        return style
+
+    def update_text_box_style(self, new_style_dict):
+        """Applies the style to the selected TextBoxItem and stores the diff."""
+        if not self.selected_text_box_item:
+            print("Style changed but no text box selected.")
+            return
+
+        row_number = self.selected_text_box_item.row_number
+
+        # Find the corresponding result in ocr_results
+        target_result = None
+        for result in self.ocr_results:
+            if result.get('row_number') == row_number:
+                target_result = result
+                break
+
+        if not target_result:
+            print(f"Error: Could not find result for row {row_number} to apply style.")
+            return
+            
+        if target_result.get('is_deleted', False):
+             print(f"Warning: Attempting to style a deleted row ({row_number}). Ignoring.")
+             return
+
+        print(f"Applying style to row {row_number}: {new_style_dict}")
+
+        # Calculate the difference from the default style
+        style_diff = get_style_diff(new_style_dict, DEFAULT_TEXT_STYLE)
+
+        # Store the difference (or remove the key if back to default)
+        if style_diff:
+            target_result['custom_style'] = style_diff
+            print(f"Stored custom style diff for row {row_number}: {style_diff}")
+        elif 'custom_style' in target_result:
+            del target_result['custom_style']
+            print(f"Removed custom style for row {row_number} (back to default).")
+
+        # --- Apply the *full* new style to the visual TextBoxItem ---
+        # We need the TextBoxItem to have a method to accept a style dictionary
+        self.selected_text_box_item.apply_styles(new_style_dict)
 
     def start_ocr(self):
         if not self.image_paths:
@@ -429,8 +562,13 @@ class MainWindow(QMainWindow):
             if child.widget():
                 child.widget().deleteLater()
 
-        # Create new editable text items with external delete buttons
-        for idx, result in enumerate(self.ocr_results):
+        # --- Filter out deleted results ---
+        visible_results = [res for res in self.ocr_results if not res.get('is_deleted', False)]
+
+        # Create new editable text items with external delete buttons for VISIBLE results
+        for result in visible_results: # Iterate over visible results
+            original_row_number = result['row_number'] # Get original row number
+
             # Create container widget for frame + button
             container = QWidget()
             container_layout = QHBoxLayout(container)
@@ -447,90 +585,123 @@ class MainWindow(QMainWindow):
             text_edit = QTextEdit(result['text'])
             text_edit.setStyleSheet(SIMPLE_VIEW_STYLES)
             text_edit.setLineWrapMode(QTextEdit.WidgetWidth)
-            text_edit.textChanged.connect(lambda te=text_edit, index=idx: self.on_simple_text_changed(index, te.toPlainText()))
+            # --- Pass ORIGINAL row number to the handler ---
+            text_edit.textChanged.connect(
+                lambda rn=original_row_number, te=text_edit: self.on_simple_text_changed(rn, te.toPlainText())
+            )
             text_layout.addWidget(text_edit)
 
             # Delete Button
             delete_btn = QPushButton(qta.icon('fa5s.trash-alt', color='red'), "")
-            delete_btn.setFixedSize(100, 100)
+            delete_btn.setFixedSize(100, 100) # Adjust size as needed
             delete_btn.setStyleSheet(SIMPLE_VIEW_STYLES)
-            row_number = result['row_number']
-            delete_btn.clicked.connect(lambda _, rn=result['row_number']: self.delete_row(rn))
+            # --- Connect delete button using ORIGINAL row number ---
+            delete_btn.clicked.connect(lambda _, rn=original_row_number: self.delete_row(rn))
 
             # Add widgets to container
             container_layout.addWidget(text_frame, 1)  # Allow frame to expand
             container_layout.addWidget(delete_btn)
-            
+
             self.simple_scroll_layout.addWidget(container)
-        
+
         self.simple_scroll_layout.addStretch()
 
-    def on_simple_text_changed(self, index, text):
+    def on_simple_text_changed(self, original_row_number, text):
         """Update OCR results when text is edited in simple view"""
-        if 0 <= index < len(self.ocr_results):
-            self.ocr_results[index]['text'] = text
-            # If in advanced mode, refresh the table
-            if self.advanced_mode_check.isChecked():
-                self.update_results_table()
+        # Find the result in the main list using the original row number
+        target_result = None
+        for res in self.ocr_results:
+            if res.get('row_number') == original_row_number:
+                target_result = res
+                break
+
+        if target_result:
+            # Check if deleted (safety)
+            if target_result.get('is_deleted', False):
+                print(f"Warning: Attempted to edit deleted row {original_row_number} from simple view.")
+                return
+            target_result['text'] = text
+            # If in advanced mode, refresh the table (optional, maybe not needed if table updates drive simple view)
+            # if self.advanced_mode_check.isChecked():
+            #    self.update_results_table() # Careful about potential loops
+        else:
+            print(f"Warning: Could not find result with row_number {original_row_number} in on_simple_text_changed")
 
     def update_results_table(self):
         self.results_table.blockSignals(True)  # Block signals during update
-        self.results_table.setRowCount(len(self.ocr_results))
-        for row, result in enumerate(self.ocr_results):
+
+        # --- Filter out deleted results ---
+        visible_results = [res for res in self.ocr_results if not res.get('is_deleted', False)]
+
+        self.results_table.setRowCount(len(visible_results)) # Set row count to visible items
+
+        # --- Iterate over VISIBLE results ---
+        for visible_row_index, result in enumerate(visible_results):
+            original_row_number = result['row_number'] # Get original row number
+
             # Text column (editable)
             text_item = QTableWidgetItem(result['text'])
-            text_item.setTextAlignment(Qt.AlignTop | Qt.AlignLeft)  # Add this line
+            text_item.setTextAlignment(Qt.AlignTop | Qt.AlignLeft)
             text_item.setFlags(text_item.flags() | Qt.ItemIsEditable)
-            self.results_table.setItem(row, 0, text_item)
+            # --- Store original row number ---
+            text_item.setData(Qt.UserRole, original_row_number)
+            self.results_table.setItem(visible_row_index, 0, text_item)
 
             # Confidence (non-editable)
             confidence_item = QTableWidgetItem(f"{result['confidence']:.2f}")
             confidence_item.setTextAlignment(Qt.AlignCenter)
             confidence_item.setFlags(confidence_item.flags() & ~Qt.ItemIsEditable)
-            self.results_table.setItem(row, 1, confidence_item)
+            confidence_item.setData(Qt.UserRole, original_row_number) # Also store here for consistency
+            self.results_table.setItem(visible_row_index, 1, confidence_item)
 
             # Coordinates (non-editable)
             coord_item = QTableWidgetItem(str(result['coordinates']))
             coord_item.setTextAlignment(Qt.AlignCenter)
             coord_item.setFlags(coord_item.flags() & ~Qt.ItemIsEditable)
-            self.results_table.setItem(row, 2, coord_item)
+            coord_item.setData(Qt.UserRole, original_row_number)
+            self.results_table.setItem(visible_row_index, 2, coord_item)
 
             # File (non-editable)
             file_item = QTableWidgetItem(result['filename'])
             file_item.setTextAlignment(Qt.AlignCenter)
             file_item.setFlags(file_item.flags() & ~Qt.ItemIsEditable)
-            self.results_table.setItem(row, 3, file_item)
+            file_item.setData(Qt.UserRole, original_row_number)
+            self.results_table.setItem(visible_row_index, 3, file_item)
 
             # Line Counts (editable)
             line_counts = str(result.get('line_counts', 1))
             line_item = QTableWidgetItem(line_counts)
             line_item.setTextAlignment(Qt.AlignCenter)
             line_item.setFlags(line_item.flags() | Qt.ItemIsEditable)
-            self.results_table.setItem(row, 4, line_item)
+            line_item.setData(Qt.UserRole, original_row_number)
+            self.results_table.setItem(visible_row_index, 4, line_item)
 
-            # Row Number (non-editable)
-            row_item = QTableWidgetItem(str(result['row_number']))
-            row_item.setTextAlignment(Qt.AlignCenter)
-            row_item.setFlags(row_item.flags() & ~Qt.ItemIsEditable)
-            self.results_table.setItem(row, 5, row_item)
+            # Row Number (non-editable) - Display the ORIGINAL row number
+            row_num_display_item = QTableWidgetItem(str(original_row_number))
+            row_num_display_item.setTextAlignment(Qt.AlignCenter)
+            row_num_display_item.setFlags(row_num_display_item.flags() & ~Qt.ItemIsEditable)
+            row_num_display_item.setData(Qt.UserRole, original_row_number)
+            self.results_table.setItem(visible_row_index, 5, row_num_display_item)
 
             # Add Delete Button
             delete_btn = QPushButton(qta.icon('fa5s.trash-alt', color='red'), "")
             delete_btn.setFixedSize(30, 30)
-            
-            # Create a container widget with right-aligned button
+
             container = QWidget()
             layout = QHBoxLayout()
-            layout.addStretch()  # Pushes the button to the right
+            layout.addStretch()
             layout.addWidget(delete_btn)
             layout.setContentsMargins(0, 0, 0, 0)
             container.setLayout(layout)
-            
-            self.results_table.setCellWidget(row, 6, container)
-            delete_btn.clicked.connect(lambda _, r=row: self.delete_row(r))
-        self.adjust_row_heights()
+
+            self.results_table.setCellWidget(visible_row_index, 6, container)
+            # --- Connect delete button using the ORIGINAL row number ---
+            delete_btn.clicked.connect(lambda _, rn=original_row_number: self.delete_row(rn))
+
+        self.adjust_row_heights() # Adjust heights based on visible rows
         self.results_table.blockSignals(False)
-        
+
+        # Also update simple view if it's active
         if not self.advanced_mode_check.isChecked():
             self.update_simple_view()
     
@@ -559,66 +730,149 @@ class MainWindow(QMainWindow):
         if obj == self.results_table and event.type() == QEvent.Resize:
             self.adjust_row_heights()
         return super().eventFilter(obj, event)
-    
-    def delete_row(self, row_number):
-        # Check if we should show warning
+
+    def delete_row(self, row_number_to_delete):
+        # Find the index corresponding to the row_number
+        target_index = -1
+        for idx, result in enumerate(self.ocr_results):
+            if result.get('row_number') == row_number_to_delete:
+                target_index = idx
+                break
+        
+        if target_index == -1:
+            print(f"Warning: Row number {row_number_to_delete} not found in ocr_results.")
+            return # Row not found
+
+        # Confirmation dialog logic (remains the same)
         show_warning = self.settings.value("show_delete_warning", "true") == "true"
         proceed = True
-        
+
         if show_warning:
             msg = QMessageBox()
             msg.setIcon(QMessageBox.Warning)
-            msg.setWindowTitle("Confirm Deletion")
-            msg.setText("<b>Permanent Deletion Warning</b>")
-            msg.setInformativeText("This action will permanently delete the selected text entry. Deleted content cannot be recovered.\n\nDo you want to continue?")
+            msg.setWindowTitle("Confirm Deletion Marking")
+            # Modify text slightly to reflect marking instead of deletion
+            msg.setText("<b>Mark for Deletion Warning</b>")
+            msg.setInformativeText("This action will mark the selected text entry for deletion. It will be hidden from view and removed during translation application.\n\nDo you want to continue?")
 
-            # Apply consistent styling
             msg.setStyleSheet(DELETE_ROW_STYLES)
-
-            # Add "Don't show again" checkbox
             dont_show_cb = QCheckBox("Remember my choice and do not ask again", msg)
             msg.setCheckBox(dont_show_cb)
-
             msg.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
             msg.setDefaultButton(QMessageBox.No)
-            
-            # Set window icon using qtawesome
             msg.setWindowIcon(qta.icon('fa5s.exclamation-triangle', color='orange'))
-            
+
             response = msg.exec_()
-            
+
             if dont_show_cb.isChecked():
                 self.settings.setValue("show_delete_warning", "false")
-            
+
             proceed = response == QMessageBox.Yes
-        
+
         if not proceed:
             return
 
-        # Original deletion logic
-        for idx, result in enumerate(self.ocr_results):
-            if result['row_number'] == row_number:
-                del self.ocr_results[idx]
-                self.update_results_table()
-                break
+        # --- Core Change: Mark as deleted instead of removing ---
+        if 0 <= target_index < len(self.ocr_results):
+            self.ocr_results[target_index]['is_deleted'] = True
+            print(f"Marked row number {row_number_to_delete} (index {target_index}) as deleted.")
+            # --- Check if the deleted row was the selected one ---
+            was_selected = (row_number_to_delete == self.current_selected_row)
+            # Refresh UI (which will now filter out deleted items)
+            self.update_results_table()
+            # Also update the image view if text boxes are currently shown
+            self.apply_translation_to_images() # Renamed for clarity
+
+        else:
+            print(f"Error: Could not mark row number {row_number_to_delete}. Index {target_index} out of bounds.")
+
+    def apply_translation_to_images(self):
+        """Apply translations/visibility changes to images based on OCR results."""
+        grouped_results = {}
+        active_rows_by_file = {}
+        for result in self.ocr_results:
+            filename = result['filename']
+            row_number = result.get('row_number', None)
+            is_deleted = result.get('is_deleted', False)
+
+            if filename not in grouped_results:
+                grouped_results[filename] = {}
+                active_rows_by_file[filename] = set()
+            if row_number is not None:
+                # Include the 'custom_style' if it exists
+                grouped_results[filename][row_number] = result # Pass the whole dict
+                if not is_deleted:
+                    active_rows_by_file[filename].add(row_number)
+
+        something_was_selected = self.selected_text_box_item is not None
+        panel_needs_hide = False
+
+        for i in range(self.scroll_layout.count()):
+            widget = self.scroll_layout.itemAt(i).widget()
+            if isinstance(widget, ResizableImageLabel):
+                image_filename = widget.filename
+                if image_filename in grouped_results:
+                    # Pass the default style dictionary along with the results
+                    widget.apply_translation(grouped_results[image_filename], DEFAULT_TEXT_STYLE)
+
+                if something_was_selected and widget == self.current_selected_image_label:
+                    current_file_active_rows = active_rows_by_file.get(image_filename, set())
+                    if self.current_selected_row not in current_file_active_rows:
+                        panel_needs_hide = True
+
+        if panel_needs_hide:
+            self.current_selected_row = None
+            self.current_selected_image_label = None
+            self.selected_text_box_item = None
+            self.style_panel.clear_and_hide()
 
     def on_cell_changed(self, row, column):
-        if row < 0 or row >= len(self.ocr_results):
-            return
+        # Get the original row number from the item's UserRole data
+        item = self.results_table.item(row, column)
+        if not item: return # Should not happen if called correctly
 
+        original_row_number = item.data(Qt.UserRole)
+        if original_row_number is None:
+             print(f"Warning: Could not get original row number for visible row {row}, column {column}")
+             return
+
+        # Find the result in the main list using the original row number
+        target_result = None
+        for res in self.ocr_results:
+            if res.get('row_number') == original_row_number:
+                target_result = res
+                break
+
+        if not target_result:
+            print(f"Warning: Could not find result with row_number {original_row_number} in ocr_results")
+            return
+        
+        # Check if the result was marked deleted (shouldn't be editable, but safety check)
+        if target_result.get('is_deleted', False):
+             print(f"Warning: Attempted to edit a deleted row ({original_row_number}). Ignoring.")
+             # Optionally revert the change in the table if it somehow happened
+             # self.results_table.blockSignals(True)
+             # item.setText(...) # Set back to original value if known
+             # self.results_table.blockSignals(False)
+             return
+
+        # Update the target_result dictionary
         if column == 0:  # Text column
-            new_text = self.results_table.item(row, column).text()
-            self.ocr_results[row]['text'] = new_text
+            new_text = item.text()
+            target_result['text'] = new_text
+            # If simple view is active, update it too
+            if not self.advanced_mode_check.isChecked():
+                 self.update_simple_view() # TODO: Optimize this later if needed
         elif column == 4:  # Line Counts column
-            new_line_counts = self.results_table.item(row, column).text()
+            new_line_counts = item.text()
             try:
                 line_counts = int(new_line_counts)
-                self.ocr_results[row]['line_counts'] = line_counts
+                target_result['line_counts'] = line_counts
             except ValueError:
                 # Revert to previous value if invalid input
-                prev_value = str(self.ocr_results[row].get('line_counts', 1))
+                prev_value = str(target_result.get('line_counts', 1))
                 self.results_table.blockSignals(True)
-                self.results_table.item(row, column).setText(prev_value)
+                item.setText(prev_value)
                 self.results_table.blockSignals(False)
 
     def update_shortcut(self):
@@ -629,59 +883,97 @@ class MainWindow(QMainWindow):
         selected_ranges = self.results_table.selectedRanges()
         if not selected_ranges:
             return
-            
-        selected_rows = sorted(set(
-            row for r in selected_ranges 
-            for row in range(r.topRow(), r.bottomRow()+1)
-        ))
-        
-        # Check if valid selection
-        if len(selected_rows) < 2:
-            QMessageBox.warning(self, "Warning", "Select at least 2 adjacent rows to combine")
+
+        # Get UNIQUE original row numbers from selected visible rows
+        selected_original_row_numbers = sorted(list(set(
+            self.results_table.item(row, 0).data(Qt.UserRole)
+            for r in selected_ranges
+            for row in range(r.topRow(), r.bottomRow() + 1)
+            if self.results_table.item(row, 0) # Check if item exists
+        )))
+
+        if len(selected_original_row_numbers) < 2:
+            QMessageBox.warning(self, "Warning", "Select at least 2 rows to combine")
             return
-            
-        # Check adjacency and same file
-        if any(selected_rows[i+1] - selected_rows[i] != 1 for i in range(len(selected_rows)-1)):
-            QMessageBox.warning(self, "Warning", "Selected rows must be adjacent")
-            return
-            
-        first_row = selected_rows[0]
-        last_row = selected_rows[-1]
+
+        # Fetch the actual result dictionaries using the original row numbers
+        selected_results = []
+        for rn in selected_original_row_numbers:
+            found = False
+            for res in self.ocr_results:
+                # Make sure we only consider non-deleted items for combining
+                if res.get('row_number') == rn and not res.get('is_deleted', False):
+                    selected_results.append(res)
+                    found = True
+                    break
+            if not found:
+                 QMessageBox.critical(self, "Error", f"Could not find result for row number {rn} during combine operation.")
+                 return
+
+        # Sort selected_results by original row number to check adjacency correctly
+        selected_results.sort(key=lambda x: x['row_number'])
+
+        # Check adjacency based on original row numbers
+        first_original_row = selected_results[0]['row_number']
+        last_original_row = selected_results[-1]['row_number']
         
-        # Check if all rows are from same file
-        filenames = {self.ocr_results[row]['filename'] for row in selected_rows}
+        # We need to ensure the original row numbers form a contiguous block
+        # among the *non-deleted* items. This is complex.
+        # Let's simplify: Check if the *visible* selection was contiguous.
+        visible_rows = sorted(list(set(
+            row for r in selected_ranges for row in range(r.topRow(), r.bottomRow() + 1)
+        )))
+        if any(visible_rows[i+1] - visible_rows[i] != 1 for i in range(len(visible_rows)-1)):
+             QMessageBox.warning(self, "Warning", "Selected rows in the table must be adjacent to combine.")
+             return
+
+        # Check if all rows are from same file (using the fetched results)
+        filenames = {res['filename'] for res in selected_results}
         if len(filenames) > 1:
             QMessageBox.warning(self, "Warning", "Cannot combine rows from different files")
             return
-            
+
         # Combine the rows
         combined_text = []
         total_lines = 0
         coordinates = []
-        
-        for row in selected_rows:
-            result = self.ocr_results[row]
+        min_confidence = 1.0 # Start high
+
+        for result in selected_results:
             combined_text.append(result['text'])
             total_lines += result.get('line_counts', 1)
             coordinates.extend(result['coordinates'])
-            
-        # Create merged result
-        merged_result = {
-            'text': '\n'.join(combined_text),
-            'confidence': min(r['confidence'] for r in self.ocr_results[first_row:last_row+1]),
-            'coordinates': coordinates,
-            'filename': self.ocr_results[first_row]['filename'],
-            'line_counts': total_lines,
-            'row_number': self.ocr_results[first_row]['row_number']
-        }
+            min_confidence = min(min_confidence, result['confidence'])
+
+        # Find the first result in the ORIGINAL list to update it
+        first_result_to_update = None
+        for res in self.ocr_results:
+            if res['row_number'] == first_original_row:
+                 first_result_to_update = res
+                 break
         
-        # Update OCR results
-        del self.ocr_results[first_row+1:last_row+1]
-        self.ocr_results[first_row] = merged_result
-        
+        if not first_result_to_update:
+            QMessageBox.critical(self, "Error", "Could not find the first row to update during combine.")
+            return
+
+        # Update the first result
+        first_result_to_update['text'] = '\n'.join(combined_text)
+        first_result_to_update['confidence'] = min_confidence
+        first_result_to_update['coordinates'] = coordinates
+        first_result_to_update['line_counts'] = total_lines
+        first_result_to_update['is_deleted'] = False # Ensure the combined one is not deleted
+
+        # --- Mark the subsequent selected results as deleted ---
+        for result_to_delete in selected_results[1:]: # Skip the first one
+            original_rn_to_delete = result_to_delete['row_number']
+            for res in self.ocr_results: # Find in original list
+                 if res['row_number'] == original_rn_to_delete:
+                     res['is_deleted'] = True
+                     break
+
         # Update table
         self.update_results_table()
-        QMessageBox.information(self, "Success", f"Combined {len(selected_rows)} rows")
+        QMessageBox.information(self, "Success", f"Combined {len(selected_results)} rows into row {first_original_row}")
     
     def stop_ocr(self):
         if hasattr(self, 'ocr_processor'):
@@ -779,26 +1071,8 @@ class MainWindow(QMainWindow):
             raise Exception(f"Failed to import translation: {str(e)}")
 
     def apply_translation(self):
-        """Apply translations to images based on OCR results."""
-        # Group OCR results by filename and row number
-        grouped_results = {}
-        for result in self.ocr_results:
-            filename = result['filename']
-            row_number = result.get('row_number', None)
-            if filename not in grouped_results:
-                grouped_results[filename] = {}
-            if row_number is not None:
-                grouped_results[filename][row_number] = {
-                    'coordinates': result['coordinates'],
-                    'text': result['text'],
-                    'line_counts': result.get('line_counts', 1)  # Default to 1 line if not available
-                }
-
-        # Apply translations to each image
-        for i in range(self.scroll_layout.count()):
-            widget = self.scroll_layout.itemAt(i).widget()
-            if isinstance(widget, ResizableImageLabel) and widget.filename in grouped_results:
-                widget.apply_translation(grouped_results[widget.filename])
+        """Apply translations/visibility changes to images based on OCR results."""
+        self.apply_translation_to_images() # Call the renamed method
 
     def import_translation(self):
         import_translation_file(self)
@@ -807,19 +1081,29 @@ class MainWindow(QMainWindow):
         export_rendered_images(self)
 
     def save_project(self):
-        # Update master.json in temp dir (save as list directly, not wrapped in 'ocr_results' key)
-        with open(os.path.join(self.temp_dir, 'master.json'), 'w') as f:
-            json.dump(self.ocr_results, f, indent=2)  # Directly dump the list
-            
-        # Repackage the .mmtl file
-        with zipfile.ZipFile(self.mmtl_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
-            for root, dirs, files in os.walk(self.temp_dir):
-                for file in files:
-                    full_path = os.path.join(root, file)
-                    rel_path = os.path.relpath(full_path, self.temp_dir)
-                    zipf.write(full_path, rel_path)
-                    
-        QMessageBox.information(self, "Saved", "Project saved successfully")
+        """Saves the project, including custom styles."""
+        # Ensure custom_style (with color strings) is saved
+        master_path = os.path.join(self.temp_dir, 'master.json')
+        try:
+            with open(master_path, 'w') as f:
+                # Make sure QColor objects aren't accidentally saved
+                serializable_results = []
+                for res in self.ocr_results:
+                    # No need to modify res directly if custom_style already has strings
+                    serializable_results.append(res)
+                json.dump(serializable_results, f, indent=2)
+
+            # Repackage (existing logic)
+            with zipfile.ZipFile(self.mmtl_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
+                for root, dirs, files in os.walk(self.temp_dir):
+                    for file in files:
+                        full_path = os.path.join(root, file)
+                        rel_path = os.path.relpath(full_path, self.temp_dir)
+                        zipf.write(full_path, rel_path)
+
+            QMessageBox.information(self, "Saved", "Project saved successfully")
+        except Exception as e:
+             QMessageBox.critical(self, "Save Error", f"Failed to save project: {e}")
 
     def closeEvent(self, event):
         # Clean up temp directory

@@ -472,4 +472,36 @@ WFWF_STYLES = """
             }
         """
 
+from PyQt5.QtGui import QColor
+
+DEFAULT_TEXT_STYLE = {
+    'bubble_type': 1,  # Rounded Rectangle
+    'corner_radius': 50,
+    'bg_color': QColor(255, 255, 255).name(QColor.HexArgb), # White
+    'border_color': QColor(0, 0, 0).name(QColor.HexArgb),     # Black
+    'text_color': QColor(0, 0, 0).name(QColor.HexArgb),       # Black
+    'border_width': 0,
+    'font_family': "Anime Ace", # Default from TextBoxItem init, adjust if needed
+    'font_size': 12,
+    'font_bold': False,
+    'font_italic': False,
+    'text_alignment': 1,  # Center
+    'auto_font_size': True, # This might be harder to manage diffs for
+}
+
+def get_style_diff(current_style, default_style):
+    """Returns a dictionary containing only the styles that differ from the default."""
+    diff = {}
+    for key, value in current_style.items():
+        if key not in default_style or default_style[key] != value:
+            # Special handling for colors - compare QColor objects if needed, but store string
+            if isinstance(value, QColor):
+                 # Convert default string back to QColor for comparison
+                 default_color = QColor(default_style.get(key))
+                 if value != default_color:
+                     diff[key] = value.name(QColor.HexArgb) # Store the string
+            else:
+                 diff[key] = value
+    return diff
+
 PROGRESS_STYLES = """QProgressBar {...}"""
