@@ -3,7 +3,7 @@ manhwaocr.py
 temp.py
 /downloaded_images/
 /test/
-translations.txt
+translations
 testui.py
 **/__pycache__/
 /md_splitter/
