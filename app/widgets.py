@@ -657,7 +657,7 @@ class ResizableImageLabel(QGraphicsView):
 
         # Defer adjustView slightly to ensure layout is stable
         from PyQt5.QtCore import QTimer
-        QTimer.singleShot(0, self.adjustView)
+        QTimer.singleShot(0, self.update_view_transform)
 
     def on_text_box_selected(self, selected, row_number):
         """Slot to handle selection changes *from* TextBoxItem signals."""
