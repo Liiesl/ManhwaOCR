@@ -1,5 +1,3 @@
-# --- START OF FILE widgets.py ---
-
 from PyQt5.QtWidgets import ( QGraphicsScene, QSizePolicy, QGraphicsPixmapItem, QGraphicsEllipseItem,
                              QGraphicsTextItem, QScrollArea, QGraphicsItem, QGraphicsRectItem, QGraphicsView, QGraphicsDropShadowEffect,
                              QStyledItemDelegate, QTextEdit, QRubberBand)
@@ -519,24 +517,60 @@ class ResizableImageLabel(QGraphicsView):
 
     def heightForWidth(self, width):
         if self.original_pixmap.isNull() or self.original_pixmap.width() == 0:
-            return self.minimumHeight() if self.minimumHeight() > 0 else 100 # Avoid zero height
+            # Provide a sensible minimum height if pixmap is invalid or has zero width
+            return self.minimumHeight() if self.minimumHeight() > 0 else 50
         # Calculate aspect ratio, ensure width isn't zero
         aspect_ratio = self.original_pixmap.height() / self.original_pixmap.width()
-        return int(aspect_ratio * width)
-
+        calculated_height = int(aspect_ratio * width)
+        # print(f"[{self.filename}] heightForWidth({width}) -> {calculated_height}") # Debug print
+        return calculated_height
 
     def resizeEvent(self, event):
+        # Instead of calling adjustView directly, let the layout settle first.
+        # The layout uses heightForWidth to determine the correct height.
+        # We just need to ensure the view transform is correct after resize.
         super().resizeEvent(event)
+        # Use a timer to ensure the viewport dimensions are finalized after resize
         from PyQt5.QtCore import QTimer
-        # Use a zero timer to defer fitting until the resize is fully processed
-        QTimer.singleShot(0, self.adjustView)
+        QTimer.singleShot(0, self.update_view_transform) # Renamed method
 
+    def update_view_transform(self):
+        """
+        Updates the view's transformation matrix to scale the scene content
+        to fit the current viewport width while maintaining aspect ratio.
+        Relies on the layout having set the correct widget height via heightForWidth.
+        """
+        if not self.scene() or self.original_pixmap.isNull() or not self.pixmap_item:
+            return
 
-    def adjustView(self):
-        if self.pixmap_item and self.scene() and not self.original_pixmap.isNull():
-            # Fit the entire scene content within the view
-            self.fitInView(self.scene().sceneRect(), Qt.KeepAspectRatio)
-            self.viewport().update() # Ensure viewport redraws
+        scene_rect = self.scene().sceneRect()
+        if scene_rect.width() == 0 or scene_rect.height() == 0:
+            # print(f"[{self.filename}] update_view_transform: Invalid scene rect {scene_rect}") # Debug print
+            return # Avoid division by zero or invalid scaling
+
+        viewport_width = self.viewport().width()
+        viewport_height = self.viewport().height() # We don't strictly use this for scaling, but good to know
+
+        # Calculate the scale factor needed to make the scene width match the viewport width
+        scale_factor = viewport_width / scene_rect.width()
+
+        # Reset any previous transformations (like zoom or pan)
+        self.resetTransform()
+        # Apply the calculated scale uniformly to maintain aspect ratio
+        self.scale(scale_factor, scale_factor)
+
+        # After scaling, the scene origin (0,0) is at the viewport's top-left.
+        # No need to center or fit further, as heightForWidth should ensure
+        # the widget's height matches the scaled pixmap's height.
+
+        # print(f"[{self.filename}] update_view_transform: VP=({viewport_width},{viewport_height}), SceneW={scene_rect.width()}, Scale={scale_factor}") # Debug print
+        self.viewport().update() # Ensure redra
+
+    # def adjustView(self):
+    #    if self.pixmap_item and self.scene() and not self.original_pixmap.isNull():
+    #        # Fit the entire scene content within the view
+    #        self.fitInView(self.scene().sceneRect(), Qt.KeepAspectRatio)
+    #        self.viewport().update() # Ensure viewport redraws
 
 
     def apply_translation(self, text_entries_by_row, default_style):
@@ -776,5 +810,3 @@ class TextEditDelegate(QStyledItemDelegate):
         # Consider calculating height based on text content if needed
         # For simplicity, rely on adjust_row_heights in MainWindow for now
         return size
-
-# --- END OF FILE widgets.py ---
