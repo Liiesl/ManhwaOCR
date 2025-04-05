@@ -1,10 +1,10 @@
-# --- START OF FILE app/text_style_panel.py ---
 import os
 from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QLabel, QComboBox, QPushButton, QSlider, QColorDialog, QFrame, 
                              QGridLayout, QCheckBox, QSpinBox, QGroupBox, QFontComboBox, QHBoxLayout)
 from PyQt5.QtCore import Qt, pyqtSignal
 from PyQt5.QtGui import QColor, QFont, QFontDatabase
 import qtawesome as qta
+from assets.styles import TEXT_BOX_STYLE_PANEL_STYLESHEET
 
 class TextBoxStylePanel(QWidget):
     """
@@ -203,52 +203,7 @@ class TextBoxStylePanel(QWidget):
         main_layout.addLayout(button_layout)
 
         # Apply some basic styling
-        self.setStyleSheet("""
-            #TextBoxStylePanel {
-                background-color: #353940; /* Slightly different background */
-                border-left: 1px solid #50555C;
-                border-right: 1px solid #2A2E33;
-            }
-            QLabel {
-                color: white;
-            }
-            QPushButton {
-                background-color: #50555C;
-                color: white;
-                border: 1px solid #60666E;
-                padding: 5px;
-                border-radius: 3px;
-            }
-            QPushButton:hover {
-                background-color: #60666E;
-            }
-            QPushButton:pressed {
-                background-color: #40444A;
-            }
-            QComboBox, QSpinBox, QFontComboBox {
-                 background-color: #50555C;
-                 color: white;
-                 border: 1px solid #60666E;
-                 padding: 5px;
-                 border-radius: 3px;
-            }
-            QCheckBox {
-                color: white;
-            }
-            QGroupBox {
-                color: white;
-                font-weight: bold;
-                border: 1px solid #60666E;
-                border-radius: 5px;
-                margin-top: 10px;
-                padding-top: 15px;
-            }
-            QGroupBox::title {
-                subcontrol-origin: margin;
-                subcontrol-position: top center;
-                padding: 0 5px;
-            }
-        """)
+        self.setStyleSheet(TEXT_BOX_STYLE_PANEL_STYLESHEET)
 
     def load_custom_fonts(self):
         """Load all .ttf and .otf fonts from the assets/fonts directory"""
@@ -477,5 +432,3 @@ class TextBoxStylePanel(QWidget):
         """Clears selection info and hides the panel."""
         self.selected_text_box_info = None
         self.hide()
-
-# --- END OF FILE app/text_style_panel.py ---

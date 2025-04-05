@@ -504,4 +504,86 @@ def get_style_diff(current_style, default_style):
                  diff[key] = value
     return diff
 
+TEXT_BOX_STYLE_PANEL_STYLESHEET = """
+            #TextBoxStylePanel {
+                background-color: #2A2A2A; 
+                border-left: 1px solid #3A3A3A;
+                border-right: 1px solid #1A1A1A;
+            }
+            QLabel {
+                color: #FFFFFF;
+                font-size: 20px;
+            }
+            QPushButton {
+                background-color: #3A3A3A;
+                color: #FFFFFF;
+                border: none;
+                padding: 10px;
+                border-radius: 20px;
+                font-size: 20px;
+            }
+            QPushButton:hover {
+                background-color: #4A4A4A;
+            }
+            QPushButton:pressed {
+                background-color: #2A2A2A;
+            }
+            QComboBox, QSpinBox, QFontComboBox {
+                background-color: #3A3A3A;
+                color: #FFFFFF;
+                border: 1px solid #4A4A4A;
+                padding: 5px;
+                border-radius: 4px;
+                font-size: 20px;
+            }
+            QComboBox::drop-down {
+                border: none;
+            }
+            QComboBox QAbstractItemView {
+                background-color: #3A3A3A;
+                color: #FFFFFF;
+                selection-background-color: #4A4A4A;
+                font-size: 20px;
+            }
+            QCheckBox {
+                color: #FFFFFF;
+                font-size: 20px;
+                spacing: 12px;
+                padding: 4px;
+            }
+            QCheckBox::indicator {
+                width: 22px;
+                height: 22px;
+                border-radius: 4px;
+            }
+            QCheckBox::indicator:unchecked {
+                border: 2px solid #3A3A3A;
+                background-color: #2A2A2A;
+            }
+            QCheckBox::indicator:unchecked:hover {
+                border: 2px solid #4A4A4A;
+                background-color: #333333;
+            }
+            QCheckBox::indicator:checked {
+                border: 2px solid #007ACC;
+                background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #0088EE, stop:1 #007ACC);
+                image: url(data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxNCIgaGVpZ2h0PSIxNCIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJub25lIiBzdHJva2U9IiNGRkZGRkYiIHN0cm9rZS13aWR0aD0iMyIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIj48cG9seWxpbmUgcG9pbnRzPSIyMCA2IDkgMTcgNCAxMiI+PC9wb2x5bGluZT48L3N2Zz4=);
+            }
+            QGroupBox {
+                color: #FFFFFF;
+                font-weight: bold;
+                border: 1px solid #3A3A3A;
+                border-radius: 10px;
+                margin-top: 15px;
+                padding-top: 15px;
+                font-size: 20px;
+            }
+            QGroupBox::title {
+                subcontrol-origin: margin;
+                subcontrol-position: top center;
+                padding: 0 8px;
+                background-color: #2A2A2A;
+            }
+        """
+
 PROGRESS_STYLES = """QProgressBar {...}"""
