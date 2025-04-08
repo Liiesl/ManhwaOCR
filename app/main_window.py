@@ -6,7 +6,7 @@ from PyQt5.QtGui import QPixmap, QKeySequence, QFontMetrics, QColor
 import qtawesome as qta
 from core.ocr_processor import OCRProcessor
 from utils.file_io import export_ocr_results, import_translation_file, export_rendered_images
-from core.data_processing import group_and_merge_text
+from core.data_processing import group_and_merge_text, distance, merge_ocr_entries
 from app.widgets import ResizableImageLabel, CustomScrollArea, TextEditDelegate
 from app.widgets_2 import CustomProgressBar, MenuBar
 from app.custom_bubble import TextBoxStylePanel
@@ -673,17 +673,20 @@ class MainWindow(QMainWindow):
             self.reset_manual_selection() # Reset state if overlay fails
 
     def process_manual_ocr_area(self):
-        """Crops the selected area, runs OCR, and adds the result."""
+        """
+        Crops the selected area, runs OCR, potentially merges results *within*
+        that area based on proximity, assigns new row numbers, and adds them.
+        Does NOT merge with existing results outside the selection.
+        """
         if not self.manual_selected_rect_scene or not self.active_manual_ocr_label or not self.reader:
             QMessageBox.warning(self, "Error", "No area selected, active label lost, or OCR reader not ready.")
-            self.reset_manual_selection() # Reset state
+            self.reset_manual_selection()
             return
 
         print(f"Processing manual OCR for selection on {self.active_manual_ocr_label.filename}")
-        self.manual_ocr_overlay.hide() # Hide overlay during processing
+        self.manual_ocr_overlay.hide()
 
         try:
-            # ... (cropping and OCR logic remains the same) ...
             # 1. Get the Crop
             crop_rect = self.manual_selected_rect_scene.toRect()
             if crop_rect.width() <= 0 or crop_rect.height() <= 0:
@@ -693,6 +696,7 @@ class MainWindow(QMainWindow):
 
             pixmap = self.active_manual_ocr_label.original_pixmap
             pixmap_rect = pixmap.rect()
+            # Ensure crop_rect is QRect, not QRectF for intersection if needed, though toRect() usually returns QRect
             bounded_crop_rect = crop_rect.intersected(pixmap_rect)
 
             if bounded_crop_rect.width() <= 0 or bounded_crop_rect.height() <= 0:
@@ -704,147 +708,247 @@ class MainWindow(QMainWindow):
             buffer = QBuffer()
             buffer.open(QBuffer.ReadWrite)
             cropped_pixmap.save(buffer, "PNG")
-            # Convert to grayscale numpy array for easyocr
             pil_image = Image.open(io.BytesIO(buffer.data())).convert('L')
             img_np = np.array(pil_image)
 
-            # 2. Run OCR
+            # 2. Run OCR on the Cropped Area
             print(f"Running manual OCR on cropped area: {bounded_crop_rect}")
-            results = self.reader.readtext(img_np, batch_size=1, detail=1)
-            print(f"Manual OCR raw results: {results}")
+            # Use detail=1 to get coordinates, text, confidence
+            raw_results_relative = self.reader.readtext(img_np, batch_size=1, detail=1)
+            print(f"Manual OCR raw results (relative coords): {raw_results_relative}")
 
-            # 3. Format and Add Results
-            filename = self.active_manual_ocr_label.filename
-            added_rows_info = [] # Store info about added rows
+            if not raw_results_relative:
+                 QMessageBox.information(self, "Info", "No text found in the selected area.")
+                 self.reset_manual_selection()
+                 return
 
-            for (coord_rel, text, confidence) in results:
-                offset_x = bounded_crop_rect.left()
-                offset_y = bounded_crop_rect.top()
-                coord_orig = [[int(p[0] + offset_x), int(p[1] + offset_y)] for p in coord_rel]
+            # 3. Prepare Raw Results for Internal Merging (using relative coords)
+            temp_results_for_merge = []
+            filename_placeholder = "manual_crop" # Filename doesn't matter for internal merge
+            for (coord_rel, text, confidence) in raw_results_relative:
+                # Keep relative coordinates for the internal merge step
+                temp_results_for_merge.append({
+                    'coordinates': coord_rel, # Relative coordinates
+                    'text': text,
+                    'confidence': confidence,
+                    'filename': filename_placeholder, # Consistent placeholder
+                    'line_counts': text.count('\n') + 1,
+                    # 'is_manual': True # Will be added later
+                })
 
-                new_row_number = self._calculate_manual_row_number(coord_orig, filename)
+            # 4. Merge Results *Within* the Selection Based on Proximity
+            # Pass the temporary list with relative coordinates
+            print(f"Attempting internal merge on {len(temp_results_for_merge)} raw detections...")
+            merged_results_relative = group_and_merge_text(
+                temp_results_for_merge,
+                distance_threshold=self.distance_threshold
+            )
+            print(f"Internal merge resulted in {len(merged_results_relative)} final block(s).")
 
-                new_result = {
-                    'coordinates': coord_orig, 'text': text, 'confidence': confidence,
-                    'filename': filename, 'row_number': new_row_number,
-                    'line_counts': text.count('\n') + 1, 'is_manual': True
+            # 5. Process Final Blocks (Filter, Offset Coords, Assign Row Num, Add)
+            filename_actual = self.active_manual_ocr_label.filename
+            added_rows_info = []
+            any_change_made = False
+            offset_x = bounded_crop_rect.left()
+            offset_y = bounded_crop_rect.top()
+
+            for merged_result in merged_results_relative:
+                # Basic filtering (confidence, height) *after* internal merge
+                confidence = merged_result['confidence']
+                coords_relative = merged_result['coordinates'] # These are still relative
+                text = merged_result['text']
+
+                if not coords_relative: continue # Should not happen after merge, but check
+
+                y_coords_rel = [p[1] for p in coords_relative]
+                height = max(y_coords_rel) - min(y_coords_rel) if y_coords_rel else 0
+                min_manual_height = 5 # Minimum height for a *final* block
+
+                if confidence < self.min_confidence or height < min_manual_height:
+                    print(f"Excluded final manual block (low conf/small): Text: '{text[:20]}...', Conf: {confidence:.2f}, Height: {height}")
+                    continue
+
+                # Convert coordinates to absolute (original image)
+                coords_absolute = [[int(p[0] + offset_x), int(p[1] + offset_y)] for p in coords_relative]
+
+                # Calculate new row number based on absolute coordinates
+                try:
+                    new_row_number = self._calculate_manual_row_number(coords_absolute, filename_actual)
+                except Exception as e:
+                     print(f"Error calculating row number for manual block '{text[:20]}...': {e}. Skipping.")
+                     continue # Skip this block if row number fails
+
+                # Create the final result dictionary to add to self.ocr_results
+                final_result = {
+                    'coordinates': coords_absolute,
+                    'text': text,
+                    'confidence': confidence,
+                    'filename': filename_actual,
+                    'line_counts': merged_result['line_counts'],
+                    'is_manual': True, # Mark as manually added
+                    'is_deleted': False,
+                    'row_number': new_row_number # Assign calculated number
+                    # 'custom_style': {} # Add default empty style if needed later
                 }
 
-                x_coords = [p[0] for p in coord_orig]
-                y_coords = [p[1] for p in coord_orig]
-                height = max(y_coords) - min(y_coords) if y_coords else 0
-                min_manual_height = 5
-                if confidence >= self.min_confidence and height >= min_manual_height:
-                    self.ocr_results.append(new_result)
-                    added_rows_info.append({'row': new_row_number, 'text': text})
-                    print(f"Added manual OCR result: Row {new_row_number}, Text: '{text}'")
-                else:
-                    print(f"Excluded manual OCR result (low conf/small): Row {new_row_number}, Text: '{text}'")
+                # Add to the main list
+                self.ocr_results.append(final_result)
+                any_change_made = True
+                added_rows_info.append({'row': new_row_number, 'text': text})
+                print(f"Added final manual block: Row {new_row_number}, Text: '{text[:20]}...'")
 
-            # 4. Sort Results & Update UI
-            if added_rows_info:
-                 self._sort_ocr_results()
+            # 6. Sort Results & Update UI (only if changes were made)
+            if any_change_made:
+                 self._sort_ocr_results() # Sort the entire list after adding new blocks
                  self.update_results_table()
                  # Refresh the specific image label where text was added
-                 self.apply_translation_to_images([filename]) # Update only the affected image
-                 QMessageBox.information(self, "Success", f"Added {len(added_rows_info)} manual OCR entries.")
-            else:
-                 QMessageBox.information(self, "Info", "No text found or results did not meet criteria.")
+                 self.apply_translation_to_images([filename_actual]) # Update only the affected image
+                 QMessageBox.information(self, "Success", f"Added {len(added_rows_info)} text block(s) from manual selection.")
+            elif merged_results_relative: # Merging happened but results failed filters
+                 QMessageBox.information(self, "Info", "Text detected, but final blocks did not meet criteria after internal merging.")
+            # else case (no raw results) handled earlier
 
-            # 5. Reset state to allow new selection
-            self.reset_manual_selection() # Go back to selection mode
+            # 7. Reset state to allow new selection
+            self.reset_manual_selection()
 
         except Exception as e:
             print(f"Error during manual OCR processing: {e}")
             traceback.print_exc(file=sys.stdout)
-            QMessageBox.critical(self, "Manual OCR Error", f"An error occurred: {str(e)}")
+            QMessageBox.critical(self, "Manual OCR Error", f"An unexpected error occurred: {str(e)}")
             # Attempt to reset state even on error
             self.reset_manual_selection()
 
-
     def _calculate_manual_row_number(self, coordinates, filename):
-        # ... (logic remains the same - uses float numbers) ...
-        if not coordinates: return 0.0
+        """
+        Calculates a float row number for a manually added OCR box.
+        The number indicates its position relative to the *globally sorted* list.
+        Format: floor(preceding_row_number).next_available_sub_index
+        Considers deleted rows when determining the next sub-index to avoid reuse.
+        """
+        if not coordinates: return 0.0 # Safety first
 
-        y_coords = [p[1] for p in coordinates]
-        center_y = (min(y_coords) + max(y_coords)) / 2
+        try:
+            # Use the minimum y-coordinate (top edge) for sorting comparison
+            y_coords = [p[1] for p in coordinates]
+            sort_key_y = min(y_coords)
+        except (ValueError, TypeError, IndexError) as e:
+             print(f"Error calculating sort key Y for new manual box: {e}")
+             return float('inf') # Assign a high number to sort last
 
-        base_row_number = -1
-        max_y_before = -1
-        min_y_after = float('inf')
-        next_base_row_number = -1 # Row number of the box immediately following
-
-        # Find the closest existing box *above* and *below* the new box in the same file
+        # --- Find the correct preceding row based on GLOBAL sort order ---
+        # The global list self.ocr_results is assumed to be sorted by filename, then row_number
+        preceding_result = None
+        # Iterate through the sorted list to find the item that comes right before the new one
         for res in self.ocr_results:
-            if res['filename'] == filename and not res.get('is_deleted', False):
-                res_coords = res.get('coordinates')
-                if not res_coords: continue
-                try:
-                    res_y_coords = [p[1] for p in res_coords]
-                    res_center_y = (min(res_y_coords) + max(res_y_coords)) / 2
-                    current_row_num = res.get('row_number')
-                    current_row_num_int = math.floor(float(current_row_num)) # Ensure float for floor
+            # *** IMPORTANT: Still skip deleted items when finding the PRECEDING VISIBLE item ***
+            # We need to find the *visible* item that comes just before the new item's position.
+            if res.get('is_deleted', False):
+                continue
 
-                    if res_center_y < center_y: # Box is above
-                        if res_center_y > max_y_before:
-                            max_y_before = res_center_y
-                            base_row_number = current_row_num_int
-                    elif res_center_y > center_y: # Box is below
-                         if res_center_y < min_y_after:
-                              min_y_after = res_center_y
-                              next_base_row_number = current_row_num_int # Store integer part of next row
+            res_filename = res.get('filename', '')
+            res_coords = res.get('coordinates')
+            res_row_number_raw = res.get('row_number') # Keep raw for now
 
-                except (TypeError, ValueError, IndexError):
-                    print(f"Warning: Error processing coordinates or row number for existing row {res.get('row_number')} in _calculate_manual_row_number")
-                    continue
+            if res_row_number_raw is None or res_coords is None: continue # Skip items without row numbers or coords
+
+            # Determine the sort key for the existing result (top y-coord)
+            try:
+                res_sort_key_y = min(p[1] for p in res_coords)
+            except (ValueError, TypeError, IndexError):
+                continue # Skip if coords invalid
+
+            # --- Comparison Logic (based on global sort order) ---
+            # 1. Compare Filenames
+            if res_filename < filename:
+                preceding_result = res # This result from a previous file is definitely before
+                continue # Check the next one
+
+            # 2. Compare within the Same File (based on vertical position)
+            elif res_filename == filename:
+                if res_sort_key_y < sort_key_y:
+                    preceding_result = res # This result in the same file is vertically above
+                    continue # Check the next one
+                else:
+                    # Found the first item in the same file at or below the new item.
+                    # The 'preceding_result' stored *before* this loop is correct.
+                    break # Exit the loop
+
+            # 3. First item in a Later File
+            else: # res_filename > filename
+                # Found the first item belonging to a subsequent file.
+                # The 'preceding_result' stored *before* this loop is correct.
+                break # Exit the loop
+
+        # --- Determine Base Row Number from the Preceding Result ---
+        base_row_number = 0 # Default if it's the very first item
+        if preceding_result:
+            try:
+                # Get the row number of the item found to be immediately preceding
+                preceding_row_num_float = float(preceding_result.get('row_number', 0.0))
+                base_row_number = math.floor(preceding_row_num_float)
+            except (ValueError, TypeError):
+                 print(f"Warning: Could not parse preceding row number '{preceding_result.get('row_number')}' for base calc.")
+                 base_row_number = 0
+        # else: it's the first item overall, base_row_number remains 0
 
 
-        if base_row_number == -1: # No preceding row found, make it 0.x
-            base_row_number = 0
-
-        # Determine the maximum sub-index used for the *determined* base_row_number
+        # --- Calculate Max Sub-index for this GLOBAL base_row_number ---
+        # Find the highest existing sub-index associated with this base_row_number,
+        # regardless of which file those sub-indexed rows belong to,
+        # *** INCLUDING DELETED ROWS *** to avoid reusing their sub-indices.
         max_sub_index_for_base = 0
         for res in self.ocr_results:
-             current_row_num = res.get('row_number')
-             if res['filename'] == filename and not res.get('is_deleted', False) and isinstance(current_row_num, float):
-                  try:
-                       current_row_num_float = float(current_row_num)
-                       if math.floor(current_row_num_float) == base_row_number:
-                           # Calculate sub-index: round((num - floor(num)) * 10)
-                           sub_index = round((current_row_num_float - base_row_number) * 10)
-                           max_sub_index_for_base = max(max_sub_index_for_base, sub_index)
-                  except (ValueError, TypeError):
-                      print(f"Warning: Could not parse float row {current_row_num} for sub-index calc.")
+             # *** MODIFICATION: REMOVED the 'is_deleted' check here ***
+             # if not res.get('is_deleted', False): # <-- Removed this line
 
+             current_row_num_raw = res.get('row_number')
+             if current_row_num_raw is None: continue
+             try:
+                 current_row_num_float = float(current_row_num_raw)
+                 # Check if this row belongs to the same integer base GLOBALLY
+                 if math.floor(current_row_num_float) == base_row_number:
+                      # Calculate sub-index accurately
+                      # Multiply by 10, round to handle potential float inaccuracies
+                      # Use a small epsilon for comparison to avoid floating point issues
+                      epsilon = 1e-9
+                      sub_index_float = (current_row_num_float - base_row_number) * 10
+                      sub_index = int(sub_index_float + epsilon) # Round towards nearest int carefully
+
+                      if sub_index > 0: # Only consider actual sub-indices (e.g., ignore the .0 part)
+                           max_sub_index_for_base = max(max_sub_index_for_base, sub_index)
+             except (ValueError, TypeError) as e:
+                 # Log quietly, don't stop the whole process
+                 # print(f"Debug: Could not parse row '{current_row_num_raw}' for sub-index calc: {e}")
+                 pass # Continue checking other results
 
         new_sub_index = max_sub_index_for_base + 1
+        # Construct the new float row number
         new_row_number = float(base_row_number) + (float(new_sub_index) / 10.0)
 
-        # --- Sanity Check: Ensure new number is less than the next integer row number ---
-        # This handles inserting between, e.g., row 5 and row 6.
-        # If next_base_row_number is valid (>=0) and is the immediate successor (base_row_number + 1),
-        # and our calculated new_row_number is >= next_base_row_number, something is wrong.
-        # This case is complex and might indicate needing a different approach if rigorous ordering
-        # between manual and auto rows is strictly required beyond simple sorting.
-        # For now, the sort handles the final ordering.
-        # if next_base_row_number != -1 and next_base_row_number == base_row_number + 1:
-        #      if new_row_number >= next_base_row_number:
-        #          print(f"Warning: Calculated manual row {new_row_number} might conflict with next row {next_base_row_number}")
-        #          # Potentially adjust or raise error? For now, rely on sorting.
+        # Debug print
+        preceding_info = f"Row {preceding_result.get('row_number', 'N/A')} in {preceding_result.get('filename', 'N/A')}" if preceding_result else "None"
+        print(f"Calculated manual row: {new_row_number:.1f} (Preceding Visible: [{preceding_info}], Base: {base_row_number}, Max Sub Found (incl. deleted): {max_sub_index_for_base}, New Sub: {new_sub_index})")
 
-        print(f"Calculated manual row number: {new_row_number} (Base: {base_row_number}, Sub: {new_sub_index})")
         return new_row_number
 
     def _sort_ocr_results(self):
         """Sorts OCR results primarily by filename, then by row number (float/int)."""
         try:
-             self.ocr_results.sort(key=lambda x: (
-                 x.get('filename', ''),
-                 float(x.get('row_number', float('inf'))) # Convert to float for consistent sorting
-             ))
-        except (TypeError, ValueError) as e:
+             # Ensure row_number is treated as float for consistent sorting
+             def sort_key(item):
+                 try:
+                     # Use inf for None or unparseable row numbers to sort them last
+                     row_num = float(item.get('row_number', float('inf')))
+                 except (ValueError, TypeError):
+                     row_num = float('inf')
+                 return (item.get('filename', ''), row_num)
+
+             self.ocr_results.sort(key=sort_key)
+        except Exception as e: # Catch potential exceptions during sorting
              print(f"Error during sorting OCR results: {e}. Check row_number values.")
-             # Implement fallback or error handling if needed
+             traceback.print_exc(file=sys.stdout)
+             QMessageBox.warning(self, "Sort Error", f"Could not sort OCR results: {e}\nManual row numbering might be affected.")
+             # Avoid proceeding with operations that rely on sorted data if sort fails
 
     # --- End New Methods ---
     
@@ -909,56 +1013,79 @@ class MainWindow(QMainWindow):
     def handle_ocr_results(self, results):
         if self.ocr_processor.stop_requested:
             print("Partial results discarded due to stop request")
+            self.ocr_progress.reset() # Also reset progress on stop
+            self.btn_stop_ocr.setVisible(False)
+            self.btn_process.setVisible(True)
             return
-        
-        self.ocr_progress.record_processing_time()
-        
-        # Update progress
-        total_images = len(self.image_paths)
-        per_image_contribution = 80.0 / total_images
-        current_image_progress = 100 / 100.0  # 100% per image
-        overall_progress = 20 + (self.current_image_index * per_image_contribution) + (current_image_progress * per_image_contribution)
-        self.ocr_progress.update_target_progress(overall_progress)
 
-        # Add results to the global list
-        # Assign initial integer row numbers
-        start_row = len(self.ocr_results) # Find next available integer index
-        # Make sure start_row is truly the next available *integer*
-        max_int_row = -1
-        for res in self.ocr_results:
-             if isinstance(res['row_number'], int):
-                 max_int_row = max(max_int_row, res['row_number'])
-        start_row = max_int_row + 1
+        self.ocr_progress.record_processing_time()
+
+        # Update progress (calculation remains the same)
+        total_images = len(self.image_paths)
+        if total_images > 0: # Prevent division by zero if stopped early
+            per_image_contribution = 80.0 / total_images
+            current_image_progress = 1.0  # Assume 100% progress for the completed image
+            overall_progress = 20 + (self.current_image_index * per_image_contribution) + (current_image_progress * per_image_contribution)
+            self.ocr_progress.update_target_progress(overall_progress)
+
+        # --- Start of Row Numbering Change ---
 
         current_image_path = self.image_paths[self.current_image_index]
         filename = os.path.basename(current_image_path)
-        formatted_results = []
-        for idx, result in enumerate(results):
-            result['filename'] = filename
-            result['row_number'] = start_row + idx  # Use continuous row numbering across all images
-            formatted_results.append(result)
 
-        # Group and merge text from the same speech bubble
-        merged_results = group_and_merge_text(
-            formatted_results, 
-            distance_threshold=self.distance_threshold  # Pass new setting
+        # Add filename to raw results before merging
+        results_with_filename = []
+        for res in results:
+            res['filename'] = filename
+            results_with_filename.append(res)
+
+        # Group and merge text from the same speech bubble (no row number assigned yet)
+        merged_results_unassigned = group_and_merge_text(
+            results_with_filename,
+            distance_threshold=self.distance_threshold
         )
-        # Check if merging happened and adjust row numbers if needed (simplistic approach)
-        if len(merged_results) < len(formatted_results):
-            print("Merging occurred, row numbers might need review if merging logic doesn't preserve them.")
-            # Re-assigning might be complex here. Let's rely on group_and_merge preserving the first row number.
 
-        self.ocr_results.extend(merged_results)
-        self._sort_ocr_results() # Sort after adding new results
+        # Sort the merged results for THIS FILE vertically based on top y-coordinate
+        try:
+            merged_results_unassigned.sort(key=lambda r: min(p[1] for p in r.get('coordinates', [[0, 0]])))
+        except ValueError:
+            print(f"Warning: Could not sort merged results for {filename} due to coordinate issues.")
+            # Handle error - maybe skip adding results for this image or log more details
+
+        # Assign sequential integer row numbers (0, 1, 2...) for THIS FILE
+        newly_processed_results = []
+        for idx, result in enumerate(merged_results_unassigned):
+            result['row_number'] = idx # Assign file-specific integer row number
+            newly_processed_results.append(result)
+
+        # Extend the main results list
+        self.ocr_results.extend(newly_processed_results)
+
+        # Sort the *entire* list (important after adding new file's results and for manual OCR)
+        self._sort_ocr_results()
+
+        # --- End of Row Numbering Change ---
 
         # Update the table
         self.update_results_table()
+        # Apply changes to the image label immediately
+        self.apply_translation_to_images([filename]) # Update only the just-processed image
 
         # Move to the next image
         self.current_image_index += 1
+        # Check stop condition *after* incrementing index
         if self.current_image_index >= len(self.image_paths):
+            print("All images processed.")
             self.btn_stop_ocr.setVisible(False)
             self.btn_process.setVisible(True)
+            # Final progress update
+            self.ocr_progress.update_target_progress(100)
+            self.reader = None # Release reader after all processing
+            self.ocr_processor = None
+            gc.collect()
+            return # Explicitly return here
+
+        # Continue to next image if not finished
         self.process_next_image()
 
     def toggle_advanced_mode(self, state):
@@ -1321,96 +1448,89 @@ class MainWindow(QMainWindow):
         shortcut = self.settings.value("combine_shortcut", "Ctrl+G")
         self.combine_action.setShortcut(QKeySequence(shortcut))
     
+    # Update combine_selected_rows to be safer with floats/ints
     def combine_selected_rows(self):
         selected_ranges = self.results_table.selectedRanges()
         if not selected_ranges:
             return
 
         # Get UNIQUE original row numbers from selected visible rows
-        selected_original_row_numbers = sorted(list(set(
-            self.results_table.item(row, 0).data(Qt.UserRole)
-            for r in selected_ranges
-            for row in range(r.topRow(), r.bottomRow() + 1)
-            if self.results_table.item(row, 0) # Check if item exists
-        )))
+        selected_original_row_numbers_raw = set()
+        for r in selected_ranges:
+            for row in range(r.topRow(), r.bottomRow() + 1):
+                item = self.results_table.item(row, 0) # Check if item exists
+                if item:
+                    rn_raw = item.data(Qt.UserRole)
+                    if rn_raw is not None:
+                        selected_original_row_numbers_raw.add(rn_raw)
 
-        if len(selected_original_row_numbers) < 2:
+        if len(selected_original_row_numbers_raw) < 2:
             QMessageBox.warning(self, "Warning", "Select at least 2 rows to combine")
             return
-        
-        # --- Add check: Disallow combining if any selected row is manual (float) for simplicity ---
-        if any(isinstance(rn, float) for rn in selected_original_row_numbers):
-             QMessageBox.warning(self, "Combine Restriction", "Combining manually added rows (with decimal numbers) is not currently supported.")
-             return
-        # --- End check ---
+
+        # Convert to float for reliable sorting, handle errors
+        selected_original_row_numbers = []
+        for rn_raw in selected_original_row_numbers_raw:
+            try:
+                selected_original_row_numbers.append(float(rn_raw))
+            except (ValueError, TypeError):
+                QMessageBox.critical(self, "Error", f"Invalid row number data found: {rn_raw}. Cannot combine.")
+                return
+        selected_original_row_numbers.sort() # Sort numerically
 
         # Fetch the actual result dictionaries using the original row numbers
         selected_results = []
-        for rn in selected_original_row_numbers:
+        filename_set = set()
+        contains_float = False
+        for rn_float in selected_original_row_numbers:
             found = False
             for res in self.ocr_results:
-                # Make sure we only consider non-deleted items for combining
-                if res.get('row_number') == rn and not res.get('is_deleted', False):
-                    selected_results.append(res)
-                    found = True
-                    break
+                # Compare as floats after conversion for robustness
+                try:
+                    res_rn_float = float(res.get('row_number', float('inf')))
+                    # Use a small tolerance for float comparison if necessary, but exact match preferred here
+                    if math.isclose(res_rn_float, rn_float) and not res.get('is_deleted', False):
+                        selected_results.append(res)
+                        filename_set.add(res.get('filename'))
+                        if isinstance(res.get('row_number'), float) and not res.get('row_number').is_integer():
+                             contains_float = True
+                        found = True
+                        break
+                except (ValueError, TypeError):
+                     continue # Skip results with bad row numbers
             if not found:
-                 QMessageBox.critical(self, "Error", f"Could not find result for row number {rn} during combine operation.")
+                 # This should ideally not happen if UserRole data is correct
+                 QMessageBox.critical(self, "Error", f"Could not find non-deleted result for row number {rn_float} during combine operation.")
                  return
 
-        # Sort selected_results by original row number to check adjacency correctly
-        selected_results.sort(key=lambda x: x['row_number'])
-
-        # Check adjacency based on original row numbers
-        first_original_row = selected_results[0]['row_number']
-        last_original_row = selected_results[-1]['row_number']
-
-                # --- Check adjacency in the *original* data for integer rows ---
-        is_adjacent = True
-        for i in range(len(selected_results) - 1):
-            # Find indices in the full ocr_results list to check true adjacency
-            current_idx = -1
-            next_idx = -1
-            try:
-                current_idx = self.ocr_results.index(selected_results[i])
-                next_idx = self.ocr_results.index(selected_results[i+1])
-            except ValueError:
-                 QMessageBox.critical(self, "Error", "Error finding row indices during combine check.")
-                 return
-
-            # Check if the *next non-deleted* item after current_idx is indeed next_idx
-            found_next_non_deleted = False
-            for j in range(current_idx + 1, len(self.ocr_results)):
-                 if not self.ocr_results[j].get('is_deleted', False):
-                      if j == next_idx:
-                           found_next_non_deleted = True
-                      break # Found the next non-deleted, stop searching
-
-            if not found_next_non_deleted:
-                 is_adjacent = False
-                 break
-
-        if not is_adjacent:
-             QMessageBox.warning(self, "Warning", "Selected rows must be adjacent in the original sequence (considering hidden deleted rows) to combine.")
-             return
-        
-        # We need to ensure the original row numbers form a contiguous block
-        # among the *non-deleted* items. This is complex.
-        # Let's simplify: Check if the *visible* selection was contiguous.
-        visible_rows = sorted(list(set(
-            row for r in selected_ranges for row in range(r.topRow(), r.bottomRow() + 1)
-        )))
-        if any(visible_rows[i+1] - visible_rows[i] != 1 for i in range(len(visible_rows)-1)):
-             QMessageBox.warning(self, "Warning", "Selected rows in the table must be adjacent to combine.")
-             return
-
-        # Check if all rows are from same file (using the fetched results)
-        filenames = {res['filename'] for res in selected_results}
-        if len(filenames) > 1:
+        # --- Check: All from same file ---
+        if len(filename_set) > 1:
             QMessageBox.warning(self, "Warning", "Cannot combine rows from different files")
             return
 
-        # Combine the rows
+        # --- Check: RESTRICTION - Only allow combining if all selected rows are standard (integer) rows for now ---
+        # This simplifies the adjacency check significantly.
+        if contains_float:
+             QMessageBox.warning(self, "Combine Restriction", "Combining rows that include manually added entries (decimal row numbers) is not supported yet. Please select only adjacent standard OCR rows.")
+             return
+
+        # --- Check: Adjacency for INTEGER rows ---
+        # Since we filtered for integers and sorted numerically:
+        is_adjacent = True
+        for i in range(len(selected_original_row_numbers) - 1):
+            # We are comparing the sorted float representations of the original integer row numbers
+            if not math.isclose(selected_original_row_numbers[i+1] - selected_original_row_numbers[i], 1.0):
+                is_adjacent = False
+                break
+
+        if not is_adjacent:
+             QMessageBox.warning(self, "Warning", "Selected standard rows must form a contiguous sequence (e.g., 5, 6, 7) to combine.")
+             return
+
+        # --- Combine the rows (logic remains similar, but uses the fetched 'selected_results') ---
+        # Sort selected_results again just to be sure order matches row numbers
+        selected_results.sort(key=lambda x: float(x.get('row_number', float('inf'))))
+
         combined_text = []
         total_lines = 0
         coordinates = []
@@ -1419,38 +1539,45 @@ class MainWindow(QMainWindow):
         for result in selected_results:
             combined_text.append(result['text'])
             total_lines += result.get('line_counts', 1)
-            coordinates.extend(result['coordinates'])
-            min_confidence = min(min_confidence, result['confidence'])
+            coordinates.extend(result['coordinates']) # Extend might need refinement if precise bounding box needed
+            min_confidence = min(min_confidence, result.get('confidence', 0.0))
 
         # Find the first result in the ORIGINAL list to update it
-        first_original_row = selected_results[0]['row_number']
-        first_result_to_update = None
-        for res in self.ocr_results:
-            if res['row_number'] == first_original_row:
-                 first_result_to_update = res
-                 break
-        
-        if not first_result_to_update:
-            QMessageBox.critical(self, "Error", "Could not find the first row to update during combine.")
-            return
+        # Use the first result from the sorted selected_results list
+        first_result_to_update = selected_results[0]
+        first_original_row = first_result_to_update['row_number'] # Keep original type for message
 
-        # Update the first result
-        first_result_to_update['text'] = '\n'.join(combined_text)
-        first_result_to_update['confidence'] = min_confidence
-        first_result_to_update['coordinates'] = coordinates
-        first_result_to_update['line_counts'] = total_lines
-        first_result_to_update['is_deleted'] = False # Ensure the combined one is not deleted
+        # Update the first result *in the main ocr_results list*
+        try:
+             first_result_index = self.ocr_results.index(first_result_to_update)
+             self.ocr_results[first_result_index]['text'] = '\n'.join(combined_text) # Join with newline? Or space? Check requirement. Let's use newline.
+             self.ocr_results[first_result_index]['confidence'] = min_confidence
+             # TODO: Recalculate combined coordinates properly if needed, for now just aggregate
+             # self.ocr_results[first_result_index]['coordinates'] = calculate_combined_bbox(coordinates)
+             self.ocr_results[first_result_index]['line_counts'] = total_lines
+             self.ocr_results[first_result_index]['is_deleted'] = False # Ensure the combined one is not deleted
+             # Keep the original row number of the first item
+        except ValueError:
+             QMessageBox.critical(self, "Error", "Could not find the first row in the main list to update during combine.")
+             return
+
 
         # --- Mark the subsequent selected results as deleted ---
         for result_to_delete in selected_results[1:]: # Skip the first one
-            original_rn_to_delete = result_to_delete['row_number']
-            for res in self.ocr_results: # Find in original list
-                 if res['row_number'] == original_rn_to_delete:
-                     res['is_deleted'] = True
-                     break
+            try:
+                 delete_index = self.ocr_results.index(result_to_delete)
+                 self.ocr_results[delete_index]['is_deleted'] = True
+            except ValueError:
+                 # This might happen if the list was modified unexpectedly
+                 print(f"Warning: Could not find result for row {result_to_delete.get('row_number')} to mark as deleted during combine.")
 
-        # Update table
+
+        # Update table and potentially the image label
         self.update_results_table()
+        target_filename = list(filename_set)[0]
+        if target_filename:
+            self.apply_translation_to_images([target_filename])
+
         QMessageBox.information(self, "Success", f"Combined {len(selected_results)} rows into row {first_original_row}")
     
     def stop_ocr(self):
