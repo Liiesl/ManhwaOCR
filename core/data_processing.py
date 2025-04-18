@@ -47,7 +47,6 @@ def merge_ocr_entries(entries_to_merge):
         return None
 
     merged_text_parts = []
-    line_counts = 0
     all_coords = []
     confidences = []
     filenames = set() # Track filenames to ensure consistency (should ideally be the same)
@@ -57,8 +56,6 @@ def merge_ocr_entries(entries_to_merge):
         text = entry.get('text', '').strip()
         if text: # Only add non-empty text parts
             merged_text_parts.append(text)
-        lines = text.split('\n')
-        line_counts += len(lines) if text else 0 # Count lines only if text exists
         all_coords.extend(entry.get('coordinates', []))
         confidences.append(entry.get('confidence', 0.0))
         filenames.add(entry.get('filename', 'unknown'))
@@ -71,6 +68,10 @@ def merge_ocr_entries(entries_to_merge):
 
     if not all_coords: # Skip if no coordinates found in the group
         print(f"Warning: Skipping merge group with no coordinates: {entries_to_merge}")
+        return None
+        
+    if not merged_text: # Skip if the merged text is empty
+        print(f"Warning: Skipping merge group with empty resulting text: {entries_to_merge}")
         return None
 
     # Calculate the bounding box covering all coordinates
@@ -97,7 +98,6 @@ def merge_ocr_entries(entries_to_merge):
         'text': merged_text,
         'confidence': np.mean(confidences) if confidences else 0.0,
         'filename': merged_filename,
-        'line_counts': line_counts,
         'is_manual': merged_is_manual
         # 'row_number': IS ASSIGNED EXTERNALLY
     }
@@ -107,47 +107,51 @@ def merge_ocr_entries(entries_to_merge):
 def group_and_merge_text(results, distance_threshold):
     """
     Groups and merges text regions that are close to each other using spatial proximity.
-    Focuses on merging geometry, text, confidence, and tracking lines.
+    Returns ONLY the merged results. Original constituents are discarded implicitly.
     Row number assignment is handled externally after sorting.
 
     :param results: List of OCR results (each containing 'coordinates', 'text', 'confidence', 'filename').
     :param distance_threshold: Maximum distance between bounding box centers to consider them part of the same group.
-    :return: List of merged OCR results without final 'row_number'.
+    :return: List of merged OCR results (dictionaries) without final 'row_number'.
     """
-    # Filter out results without coordinates before grouping
-    valid_results = [r for r in results if 'coordinates' in r and r['coordinates'] and r.get('filename') is not None]
+    # Filter out results without coordinates or filename before grouping
+    valid_results = [
+        r for r in results
+        if r.get('coordinates') and r.get('filename') is not None and r.get('text', '').strip()
+    ]
     if not valid_results:
         return []
 
     grouped_results_by_file = {} # Group by filename first
 
+    # --- Grouping Logic ---
     for result in valid_results:
         filename = result['filename']
         if filename not in grouped_results_by_file:
-             grouped_results_by_file[filename] = []
+             grouped_results_by_file[filename] = [] # Stores lists of groups for this file
 
-        added_to_group = False
+        added_to_existing_group = False
         # Check groups ONLY within the same file
         for group in grouped_results_by_file[filename]:
             # Check if this result is close to any result ALREADY in the group
             if any(distance(result['coordinates'], existing['coordinates']) < distance_threshold for existing in group):
-                group.append(result)
-                added_to_group = True
+                group.append(result) # Add the original result to the group list
+                added_to_existing_group = True
                 break # Added to a group, move to next result
 
-        if not added_to_group:
-             # Start a new group for this file
+        if not added_to_existing_group:
+             # Start a new group for this file, containing only this result so far
              grouped_results_by_file[filename].append([result])
 
-    # Merge text within each group for each file
+    # --- Merging Logic ---
     merged_results_final = []
-    for filename, groups in grouped_results_by_file.items():
-        for group in groups:
-            merged_entry = merge_ocr_entries(group) # Use the new helper
-            if merged_entry:
+    for filename, groups_in_file in grouped_results_by_file.items():
+        for group in groups_in_file: # group is a list of original result dicts
+            merged_entry = merge_ocr_entries(group) # Use the helper to combine them
+            if merged_entry: # Only add if merging was successful (returned a dict)
                  merged_results_final.append(merged_entry)
 
-    # Note: The final list is NOT sorted globally here. Sorting happens later.
+    # Note: The final list is NOT sorted globally here. Sorting happens later in MainWindow.
     return merged_results_final
 
 # --- END OF FILE data_processing.py ---
