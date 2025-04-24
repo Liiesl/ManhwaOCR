@@ -1,5 +1,5 @@
-from PyQt5.QtWidgets import QProgressBar, QMenuBar, QAction, QDialog, QMessageBox, QFileDialog
-from PyQt5.QtCore import QTimer, QDateTime
+from PyQt5.QtWidgets import QProgressBar, QMenuBar, QAction, QDialog, QMessageBox, QFileDialog, QTextEdit, QStyledItemDelegate, QScrollArea
+from PyQt5.QtCore import QTimer, QDateTime, Qt
 import qtawesome as qta
 
 class MenuBar(QMenuBar):
@@ -207,3 +207,57 @@ class CustomProgressBar(QProgressBar):
         self.processing_times.clear()
         self.flat_progress_timer.stop()
         self.progress_timer.stop()
+
+class TextEditDelegate(QStyledItemDelegate):
+    def createEditor(self, parent, option, index):
+        editor = QTextEdit(parent)
+        editor.setAcceptRichText(False)
+        editor.setLineWrapMode(QTextEdit.WidgetWidth) # Use WidgetWidth for auto-wrap
+        # editor.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff) # Optional: hide scrollbar in editor
+        return editor
+
+    def setEditorData(self, editor, index):
+        text = index.model().data(index, Qt.DisplayRole)
+        editor.setPlainText(text)
+
+    def setModelData(self, editor, model, index):
+        model.setData(index, editor.toPlainText(), Qt.EditRole)
+
+    def updateEditorGeometry(self, editor, option, index):
+        # Provide sufficient height based on content or use table row height
+        editor.setGeometry(option.rect)
+
+    # Optional: Adjust size hint for better row height calculation
+    def sizeHint(self, option, index):
+        size = super().sizeHint(option, index)
+        # Consider calculating height based on text content if needed
+        # For simplicity, rely on adjust_row_heights in MainWindow for now
+        return size
+    
+class CustomScrollArea(QScrollArea):
+    def __init__(self, overlay_widget, parent=None):
+        super().__init__(parent)
+        self.overlay_widget = overlay_widget
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self.update_overlay_position()
+
+    def update_overlay_position(self):
+        if self.overlay_widget:
+            overlay_width = 300 # Consider making these dynamic or constants
+            overlay_height = 60
+            # Use viewport size for positioning relative to visible area
+            viewport_width = self.viewport().width()
+            viewport_height = self.viewport().height()
+
+            # Position relative to viewport, adjust for scrollbar width if necessary
+            scrollbar_width = self.verticalScrollBar().width() if self.verticalScrollBar().isVisible() else 0
+            x = (viewport_width - overlay_width) // 2
+            y = viewport_height - overlay_height - 10 # 10 pixels from bottom of viewport
+
+            # Map viewport coordinates to widget coordinates if overlay is child of self
+            # If overlay is child of viewport(), positioning is simpler
+            # Assuming overlay_widget is child of self (the QScrollArea)
+            self.overlay_widget.setGeometry(x, y, overlay_width, overlay_height)
+            self.overlay_widget.raise_() # Ensure it stays on top

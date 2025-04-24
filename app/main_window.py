@@ -1,5 +1,3 @@
-# --- START OF FILE main_window.py ---
-
 from PyQt5.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QSizePolicy, QFrame, QScrollArea, QStackedWidget,
                              QCheckBox, QPushButton, QTableWidget, QTableWidgetItem, QMessageBox, QSplitter, QHeaderView,
                              QAction, QTextEdit, QLabel)
@@ -10,8 +8,8 @@ import qtawesome as qta
 from core.ocr_processor import OCRProcessor
 from utils.file_io import export_ocr_results, import_translation_file, export_rendered_images
 from core.data_processing import group_and_merge_text # Still needed for manual OCR merge
-from app.widgets import ResizableImageLabel, CustomScrollArea, TextEditDelegate
-from app.widgets_2 import CustomProgressBar, MenuBar
+from app.image_area import ResizableImageLabel
+from app.ui_widget import CustomProgressBar, MenuBar, CustomScrollArea, TextEditDelegate
 from app.custom_bubble import TextBoxStylePanel
 from app.find_replace import FindReplaceWidget # <--- IMPORT
 from utils.settings import SettingsDialog
@@ -1529,6 +1527,3 @@ class MainWindow(QMainWindow):
             if self.ocr_processor.isRunning():
                  self.ocr_processor.terminate() # Force if needed
         super().closeEvent(event)
-
-
-# --- END OF FILE main_window.py ---

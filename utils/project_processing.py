@@ -4,7 +4,7 @@ import json
 import tempfile
 import re
 from shutil import copyfile, rmtree
-from app.widgets_3 import NewProjectDialog, ImportWFWFDialog
+from app.project_dialog import NewProjectDialog, ImportWFWFDialog
 from PyQt5.QtWidgets import QMessageBox, QFileDialog, QDialog, QApplication
 from PyQt5.QtCore import QDateTime, QDir, Qt
 
