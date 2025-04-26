@@ -298,6 +298,7 @@ class MainWindow(QMainWindow):
         right_panel.addLayout(translation_btn_layout)
 
         right_widget = QWidget()
+        right_widget.setObjectName("RightWidget")
         right_widget.setLayout(right_panel)
         right_widget.setStyleSheet(RIGHT_WIDGET_STYLES)
 
@@ -1398,7 +1399,7 @@ class MainWindow(QMainWindow):
 
     def start_translation(self):
         api_key = self.settings.value("gemini_api_key", "")
-        model_name = self.settings.value("gemini_model", "gemini-1.5-flash") # Default or from settings
+        model_name = self.settings.value("gemini_model", "gemini-2.5-flash-preview-04-17") # Default or from settings
         if not api_key:
             QMessageBox.critical(self, "Error", "Please set Gemini API key in Settings"); return
 

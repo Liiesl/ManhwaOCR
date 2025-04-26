@@ -126,6 +126,7 @@ class SettingsDialog(QDialog):
         self.model_combo = QComboBox()
         # Add models - consider fetching dynamically or updating less frequently
         self.model_combo.addItems([
+            "gemini-2.5-flash-preview-04-17",
             "gemini-2.0-flash",
             "gemini-2.0-flash-lite",
             "gemini-2.0-pro-exp-03-25",

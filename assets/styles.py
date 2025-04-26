@@ -318,10 +318,14 @@ ADVANCED_CHECK_STYLES = """
         """
 
 RIGHT_WIDGET_STYLES = """
-            QWidget {
+            #RightWidget {
                 background-color: #2A2A2A;
                 border: none;
                 border-top-left-radius: 50px; /* Rounded top-left corner */
+            }
+            QWidget {
+                background-color: #2A2A2A;
+                border: none;
             }
             /* Buttons style */
             QPushButton {
@@ -582,6 +586,7 @@ DEFAULT_TEXT_STYLE = {
     'text_gradient': DEFAULT_GRADIENT.copy(), # Default gradient text (used if text_color_type='linear_gradient')
     # Font
     'font_family': "Anime Ace", # Default from TextBoxItem init, adjust if needed
+    'font_style': "Regular",
     'font_size': 22, # Increased default size
     'font_bold': False,
     'font_italic': False,
