@@ -1,5 +1,3 @@
-# --- START OF FILE settings.py ---
-
 from PyQt5.QtWidgets import (QDialog, QDoubleSpinBox, QVBoxLayout, QFormLayout,
                              QComboBox, QSpinBox, QDialogButtonBox, QTabWidget,
                              QWidget, QLineEdit, QKeySequenceEdit, QCheckBox, QLabel) # Added QLabel
@@ -124,19 +122,34 @@ class SettingsDialog(QDialog):
 
         # Gemini Model Selection
         self.model_combo = QComboBox()
-        # Add models - consider fetching dynamically or updating less frequently
-        self.model_combo.addItems([
-            "gemini-2.5-flash-preview-04-17",
-            "gemini-2.0-flash",
-            "gemini-2.0-flash-lite",
-            "gemini-2.0-pro-exp-03-25",
-            "gemini-2.0-flash-thinking-exp-01-21",
-            "gemini-1.5-pro",
-            "gemini-1.5-flash",
-        ])
-        current_model = self.settings.value("gemini_model", "gemini-2.0-flash")
-        self.model_combo.setCurrentText(current_model)
+        
+        # Define model information (actual_name, display_info_text)
+        # Order matches the original list provided in the problem description
+        GEMINI_MODELS_WITH_INFO = [
+            ("gemini-2.5-flash-preview-05-20", "500 req/day (free)"),
+            ("gemini-2.5-flash-preview-04-17", "Rate limits apply (Preview)"),
+            ("gemini-2.0-flash", "Up to 86,400 req/day (Free Tier)"), # Default in original code
+            ("gemini-2.0-flash-lite", "Up to 86,400 req/day (Free Tier)"),
+            ("gemini-2.0-pro-exp-03-25", "Experimental (check limits)"),
+            ("gemini-2.0-flash-thinking-exp-01-21", "Experimental (check limits)"),
+            ("gemini-1.5-pro", "Up to 50 req/day (Free during Preview)"),
+            ("gemini-1.5-flash", "Up to 86,400 req/day (Free Tier)"),
+        ]
+
+        for model_name, model_info_text in GEMINI_MODELS_WITH_INFO:
+            display_text = f"{model_name} | {model_info_text}"
+            self.model_combo.addItem(display_text, userData=model_name) # Store actual model name as userData
+
+        current_model_value = self.settings.value("gemini_model", "gemini-2.0-flash")
+        # Find the index of the item whose userData matches the saved model name
+        for i in range(self.model_combo.count()):
+            if self.model_combo.itemData(i) == current_model_value:
+                self.model_combo.setCurrentIndex(i)
+                break
+        # If the saved model is not found in the list, it will default to the first item (index 0)
+
         api_layout.addRow("Gemini Model:", self.model_combo)
+
 
         # Target Language
         self.lang_combo = QComboBox()
@@ -201,7 +214,7 @@ class SettingsDialog(QDialog):
 
         # Save API settings
         self.settings.setValue("gemini_api_key", self.api_key_edit.text())
-        self.settings.setValue("gemini_model", self.model_combo.currentText())
+        self.settings.setValue("gemini_model", self.model_combo.currentData()) # Use currentData() to get actual model name
         self.settings.setValue("target_language", self.lang_combo.currentText())
 
         # Save Keyboard Shortcuts
@@ -210,5 +223,3 @@ class SettingsDialog(QDialog):
         self.settings.setValue("find_shortcut", self.find_shortcut_edit.keySequence().toString(QKeySequence.NativeText))
 
         super().accept()
-
-# --- END OF FILE settings.py ---
