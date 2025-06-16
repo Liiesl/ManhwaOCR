@@ -126,14 +126,13 @@ class SettingsDialog(QDialog):
         # Define model information (actual_name, display_info_text)
         # Order matches the original list provided in the problem description
         GEMINI_MODELS_WITH_INFO = [
-            ("gemini-2.5-flash-preview-05-20", "500 req/day (free)"),
-            ("gemini-2.5-flash-preview-04-17", "Rate limits apply (Preview)"),
-            ("gemini-2.0-flash", "Up to 86,400 req/day (Free Tier)"), # Default in original code
-            ("gemini-2.0-flash-lite", "Up to 86,400 req/day (Free Tier)"),
-            ("gemini-2.0-pro-exp-03-25", "Experimental (check limits)"),
-            ("gemini-2.0-flash-thinking-exp-01-21", "Experimental (check limits)"),
-            ("gemini-1.5-pro", "Up to 50 req/day (Free during Preview)"),
-            ("gemini-1.5-flash", "Up to 86,400 req/day (Free Tier)"),
+            ("gemini-2.5-flash-preview-05-20", "500 req/day (free tier)"),
+            ("gemini-2.5-flash-preview-04-17", "500 req/day (free tier)"),
+            ("gemini-2.5-pro-preview-06-05", "No free tier"),
+            ("gemini-2.5-pro-preview-05-06", "No free tier"),
+            ("gemini-2.0-flash", "1500 req/day (free tier)"),
+            ("gemini-2.0-flash-lite", "1500 req/day (free tier)"),
+            ("gemma-3n-e4b-it", "14400 req/day")
         ]
 
         for model_name, model_info_text in GEMINI_MODELS_WITH_INFO:
