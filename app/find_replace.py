@@ -74,7 +74,6 @@ class FindReplaceWidget(QWidget):
         find_row_layout.setSpacing(4) # Spacing between elements in the row
 
         # Toggle Replace Button
-        # CORRECTED: Added "" for text argument
         self.btn_toggle_replace = QPushButton(qta.icon('fa5s.chevron-right', color='inherit'), "")
         self.btn_toggle_replace.setCheckable(True)
         self.btn_toggle_replace.setToolTip("Toggle Replace")
@@ -96,14 +95,12 @@ class FindReplaceWidget(QWidget):
         find_row_layout.addWidget(self.match_count_label)
 
         # --- Filter Buttons ---
-        # CORRECTED: Added "" for text argument
         self.btn_match_case = QPushButton(qta.icon('mdi.format-letter-case', color='inherit'), "")
         self.btn_match_case.setCheckable(True)
         self.btn_match_case.setToolTip("Match Case")
         self.btn_match_case.clicked.connect(self._update_filters)
         find_row_layout.addWidget(self.btn_match_case)
 
-        # CORRECTED: Added "" for text argument
         self.btn_whole_word = QPushButton(qta.icon('mdi.format-letter-matches', color='inherit'), "")
         self.btn_whole_word.setCheckable(True)
         self.btn_whole_word.setToolTip("Match Whole Word (Not Implemented)")
@@ -111,7 +108,6 @@ class FindReplaceWidget(QWidget):
         # self.btn_whole_word.clicked.connect(self._update_filters)
         find_row_layout.addWidget(self.btn_whole_word)
 
-        # CORRECTED: Added "" for text argument
         self.btn_regex = QPushButton(qta.icon('mdi.regex', color='inherit'), "")
         self.btn_regex.setCheckable(True)
         self.btn_regex.setToolTip("Use Regular Expression (Not Implemented)")
@@ -121,7 +117,6 @@ class FindReplaceWidget(QWidget):
         # --- End Filter Buttons ---
 
         # --- Navigation Buttons ---
-        # CORRECTED: Added "" for text argument
         self.btn_prev = QPushButton(qta.icon('fa5s.arrow-up', color='inherit'), "")
         self.btn_prev.setToolTip("Previous Match (Shift+Enter)")
         self.btn_prev.clicked.connect(self.find_previous)
@@ -129,7 +124,6 @@ class FindReplaceWidget(QWidget):
         self.btn_prev.setStyleSheet(FIND_REPLACE_STYLESHEET)
         find_row_layout.addWidget(self.btn_prev)
 
-        # CORRECTED: Added "" for text argument
         self.btn_next = QPushButton(qta.icon('fa5s.arrow-down', color='inherit'), "")
         self.btn_next.setToolTip("Next Match (Enter)")
         self.btn_next.clicked.connect(self.find_next)
@@ -138,7 +132,6 @@ class FindReplaceWidget(QWidget):
         # --- End Navigation Buttons ---
 
         # Close Button
-        # CORRECTED: Added "" for text argument
         self.btn_close = QPushButton(qta.icon('fa5s.times', color='inherit'), "")
         self.btn_close.setObjectName("CloseButton") # Assign ID for specific hover style
         self.btn_close.setToolTip("Close (Esc)")
@@ -165,14 +158,12 @@ class FindReplaceWidget(QWidget):
         replace_row_layout.addWidget(self.replace_input)
 
         # Replace Buttons
-        # CORRECTED: Added "" for text argument
         self.btn_replace = QPushButton(qta.icon('mdi.find-replace', color='inherit'), "")
         self.btn_replace.setToolTip("Replace Current (Ctrl+H)")
         self.btn_replace.clicked.connect(self.replace_current)
         self.btn_replace.setShortcut("Ctrl+H")
         replace_row_layout.addWidget(self.btn_replace)
 
-        # CORRECTED: Added "" for text argument
         self.btn_replace_all = QPushButton(qta.icon('mdi.file-replace-outline', color='inherit'), "")
         self.btn_replace_all.setToolTip("Replace All (Ctrl+Shift+H)")
         self.btn_replace_all.clicked.connect(self.replace_all)
@@ -263,9 +254,6 @@ class FindReplaceWidget(QWidget):
             self.current_match_index = 0
             self.highlight_match(0) # Highlight first, don't focus
 
-    # --- update_match_count_label, _get_or_create_highlighter, _find_widget_for_match ---
-    # --- highlight_match, focus_current_match, clear_highlights          ---
-    # --- find_next, find_previous methods remain the same as previous version ---
     def update_match_count_label(self):
         has_matches = bool(self.matches)
         count = len(self.matches)
@@ -282,19 +270,29 @@ class FindReplaceWidget(QWidget):
         if document not in self._active_highlighters: self._active_highlighters[document] = SearchHighlighter(document)
         return self._active_highlighters[document]
 
+    # MODIFIED: Updated to access UI elements via self.main_window.results_widget
     def _find_widget_for_match(self, index):
         if not (0 <= index < len(self.matches)): return None, None, None
         match_info = self.matches[index]; row_number = match_info['row_number']
+        
+        # Access the modular widget that holds the results UI
+        results_widget = self.main_window.results_widget
+        
         if self.main_window.advanced_mode_check.isChecked():
-            for r in range(self.main_window.results_table.rowCount()):
-                 item = self.main_window.results_table.item(r, 0)
+            table = results_widget.results_table
+            for r in range(table.rowCount()):
+                 item = table.item(r, 0)
                  try:
                       item_rn = item.data(Qt.UserRole) if item else None
-                      if item_rn is not None and float(item_rn) == float(row_number): return 'table', item, self.main_window.results_table
+                      if item_rn is not None and float(item_rn) == float(row_number):
+                          return 'table', item, table
                  except (ValueError, TypeError): continue
         else:
-            for i in range(self.main_window.simple_scroll_layout.count()):
-                item_layout = self.main_window.simple_scroll_layout.itemAt(i); container_widget = item_layout.widget() if item_layout else None
+            # Check if simple_scroll_layout exists to avoid errors
+            if not hasattr(results_widget, 'simple_scroll_layout'): return None, None, None
+            layout = results_widget.simple_scroll_layout
+            for i in range(layout.count()):
+                item_layout = layout.itemAt(i); container_widget = item_layout.widget() if item_layout else None
                 if container_widget:
                     try:
                          widget_row_number = container_widget.property("ocr_row_number")
@@ -304,6 +302,7 @@ class FindReplaceWidget(QWidget):
                     except (ValueError, TypeError): continue
         return None, None, None
 
+    # MODIFIED: Updated to access UI elements via self.main_window.results_widget
     def highlight_match(self, index):
         widget_type, target_widget, container = self._find_widget_for_match(index)
         if widget_type == 'table':
@@ -317,7 +316,8 @@ class FindReplaceWidget(QWidget):
             highlighter.setPattern(self.find_input.text(), self._match_case) # Ensure pattern set
             cursor = target_text_edit.textCursor(); cursor.setPosition(start); cursor.setPosition(end, QTextCursor.MoveMode.KeepAnchor)
             target_text_edit.setTextCursor(cursor)
-            self.main_window.simple_scroll.ensureWidgetVisible(container_widget)
+            # Access the scroll area within the results_widget
+            self.main_window.results_widget.simple_scroll.ensureWidgetVisible(container_widget)
         self.update_match_count_label()
 
     def focus_current_match(self):
@@ -326,8 +326,10 @@ class FindReplaceWidget(QWidget):
         elif widget_type == 'simple_text_edit': target_widget.setFocus()
         else: self.find_input.setFocus()
 
+    # MODIFIED: Updated to access UI elements via self.main_window.results_widget
     def clear_highlights(self):
-        self.main_window.results_table.clearSelection()
+        # Access the results_table within the results_widget
+        self.main_window.results_widget.results_table.clearSelection()
         for highlighter in self._active_highlighters.values(): highlighter.setPattern("", self._match_case)
 
     def find_next(self):
@@ -399,24 +401,33 @@ class FindReplaceWidget(QWidget):
         self.matches = []; self.current_match_index = -1
         self.clear_highlights(); self.update_match_count_label()
 
+    # MODIFIED: Updated to access UI elements via self.main_window.results_widget
     def _update_ui_text(self, row_number, new_text):
-        # --- Method remains the same ---
+        # Access the modular widget that holds the results UI
+        results_widget = self.main_window.results_widget
+
         if self.main_window.advanced_mode_check.isChecked():
-            for r in range(self.main_window.results_table.rowCount()):
-                 item = self.main_window.results_table.item(r, 0)
+            table = results_widget.results_table
+            for r in range(table.rowCount()):
+                 item = table.item(r, 0)
                  try:
                       item_rn = item.data(Qt.UserRole) if item else None
-                      if item_rn is not None and float(item_rn) == float(row_number): self.main_window.results_table.blockSignals(True); item.setText(new_text); self.main_window.results_table.blockSignals(False); break
+                      if item_rn is not None and float(item_rn) == float(row_number):
+                          table.blockSignals(True); item.setText(new_text); table.blockSignals(False); break
                  except (ValueError, TypeError): continue
         else:
-            for i in range(self.main_window.simple_scroll_layout.count()):
-                item_layout = self.main_window.simple_scroll_layout.itemAt(i); container_widget = item_layout.widget() if item_layout else None
+            # Check if simple_scroll_layout exists to avoid errors
+            if not hasattr(results_widget, 'simple_scroll_layout'): return
+            layout = results_widget.simple_scroll_layout
+            for i in range(layout.count()):
+                item_layout = layout.itemAt(i); container_widget = item_layout.widget() if item_layout else None
                 if container_widget:
                     try:
                          widget_row_number = container_widget.property("ocr_row_number")
                          if widget_row_number is not None and float(widget_row_number) == float(row_number):
                              target_text_edit = container_widget.findChild(QTextEdit)
-                             if target_text_edit: target_text_edit.blockSignals(True); target_text_edit.setText(new_text); target_text_edit.blockSignals(False)
+                             if target_text_edit:
+                                 target_text_edit.blockSignals(True); target_text_edit.setText(new_text); target_text_edit.blockSignals(False)
                              break
                     except (ValueError, TypeError): continue
 
@@ -427,23 +438,17 @@ class FindReplaceWidget(QWidget):
         self.update_match_count_label() # Update replace button states
 
     def showEvent(self, event):
-        # --- Method remains the same ---
         super().showEvent(event); self.find_input.setFocus(); self.find_input.selectAll()
         self.find_text()
 
     def hideEvent(self, event):
-        # --- Method remains the same ---
         super().hideEvent(event)
         self.clear_highlights(); self.matches = []; self.current_match_index = -1
         self.update_match_count_label()
 
     def focus_find_input(self):
-        # --- Method remains the same ---
         self.show(); self.raise_()
         self.find_input.setFocus(); self.find_input.selectAll()
 
     def close_widget(self):
-        # --- Method remains the same ---
         self.hide(); self.closed.emit()
-
-# --- END OF FILE app/find_replace.py ---
