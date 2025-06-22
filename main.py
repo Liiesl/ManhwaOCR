@@ -355,6 +355,35 @@ class Home(QMainWindow):
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
+
+    # Always create the Home window instance. It will act as our controller.
     window = Home()
-    window.show()
+
+    project_to_open = None
+    # Check if a .mmtl file path was passed as a command-line argument
+    if len(sys.argv) > 1 and sys.argv[1].lower().endswith('.mmtl'):
+        path = sys.argv[1]
+        if os.path.exists(path):
+            # The path is valid, store it for launching.
+            project_to_open = path
+        else:
+            # The path was provided but is invalid. Show an error, and then
+            # we will fall back to showing the normal Home window.
+            QMessageBox.critical(window, "Error", f"The project file could not be found:\n{path}")
+
+    # Now, decide what to do based on whether we have a project to open.
+    if project_to_open:
+        # A valid project path was provided.
+        # Call the launch function, which will show the loading dialog.
+        window.launch_main_app(project_to_open)
+        # IMPORTANT: We do NOT show the 'Home' window. The loading dialog is shown
+        # by launch_main_app, and the MainWindow will be shown when loading is complete.
+    else:
+        # No valid project was provided via command line.
+        # Show the normal 'Home' window with the recent projects list.
+        window.show()
+
+    # CRITICAL: Start the event loop. This keeps the application alive,
+    # allowing the ProjectLoaderThread to run and its signals to be processed.
+    # This is what was missing from the previous attempt.
     sys.exit(app.exec_())

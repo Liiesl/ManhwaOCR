@@ -32,12 +32,22 @@ def new_project(self):
                 # Add images
                 images_dir = 'images/'
                 if os.path.isfile(source_path):
-                    zipf.write(source_path, images_dir + os.path.basename(source_path))
+                    # If it's a single file, just add it
+                    zipf.write(source_path, os.path.join(images_dir, os.path.basename(source_path)))
                 elif os.path.isdir(source_path):
-                    for file in os.listdir(source_path):
-                        if file.lower().endswith(('png', 'jpg', 'jpeg')):
-                            zipf.write(os.path.join(source_path, file), 
-                                     images_dir + file)
+                    # --- START OF MODIFIED SECTION ---
+                    # If it's a directory, correct the filenames to ensure sequential order
+                    filename_map = correct_filenames(source_path)
+                    
+                    # Add images to the zip with their new, corrected names
+                    for original_name, new_name in filename_map.items():
+                        if new_name.lower().endswith(('png', 'jpg', 'jpeg')):
+                            # Source path uses the original filename
+                            src_path = os.path.join(source_path, original_name)
+                            # Destination path inside the zip uses the new, standardized filename
+                            dst_path_in_zip = os.path.join(images_dir, new_name)
+                            zipf.write(src_path, dst_path_in_zip)
+                    # --- END OF MODIFIED SECTION ---
                 
                 # Create empty OCR results
                 zipf.writestr('master.json', json.dumps([]))  # Empty list
@@ -166,69 +176,45 @@ def launch_project(self, mmtl_path):
 
 def correct_filenames(directory):
     """
-    Apply number correction to filenames in the directory.
+    Renames files by extracting the last number found in the filename,
+    sorting numerically, and standardizing to a 'temp_XXXX.ext' format.
+    This ensures correct sequential order regardless of the original naming scheme.
     Returns a dict mapping original filenames to corrected ones.
     """
-    # Get all files in the directory
     files = os.listdir(directory)
+    numbered_files = []
+
+    # 1. First pass: Collect all files that have numbers.
+    for filename in files:
+        # Find all sequences of digits in the filename.
+        numbers = re.findall(r'\d+', filename)
+        if numbers:
+            # The page number is assumed to be the last one found.
+            num = int(numbers[-1])
+            _, ext = os.path.splitext(filename)
+            numbered_files.append({'num': num, 'original': filename, 'ext': ext})
+
+    # If no processable files were found, return a map of all files to themselves.
+    if not numbered_files:
+        return {f: f for f in files}
+
+    # 2. Sort the collected files numerically based on the extracted number.
+    numbered_files.sort(key=lambda x: x['num'])
+
+    # 3. Build the final mapping.
     filename_map = {}
     
-    # Dictionaries to track maximum suffix lengths for both formats
-    parentheses_lengths = []
-    direct_suffix_lengths = []
-    
-    # First pass: determine maximum numeric suffix lengths for both formats
-    for filename in files:
-        base, ext = os.path.splitext(filename)
-        
-        # Check for numbers in parentheses: "filename (123).ext"
-        parentheses_match = re.match(r'^(.*?)\s*\((\d+)\)$', base)
-        if parentheses_match:
-            num_str = parentheses_match.group(2)
-            parentheses_lengths.append(len(num_str))
-            continue
-        
-        # Check for direct numeric suffixes: "filename123.ext"
-        direct_match = re.match(r'^(.*?)(\d+)$', base)
-        if direct_match:
-            num_str = direct_match.group(2)
-            direct_suffix_lengths.append(len(num_str))
-    
-    # Determine maximum lengths (if any files were found)
-    max_parentheses_length = max(parentheses_lengths) if parentheses_lengths else 0
-    max_direct_length = max(direct_suffix_lengths) if direct_suffix_lengths else 0
-    
-    # No files with numeric suffixes found
-    if max_parentheses_length == 0 and max_direct_length == 0:
-        return {filename: filename for filename in files}
-    
-    # Second pass: rename files with padded numbers
-    for filename in files:
-        base, ext = os.path.splitext(filename)
-        new_filename = filename  # Default to no change
-        
-        # Handle numbers in parentheses: "filename (123).ext"
-        parentheses_match = re.match(r'^(.*?)\s*\((\d+)\)$', base)
-        if parentheses_match and max_parentheses_length > 0:
-            base_part = parentheses_match.group(1).rstrip()  # Remove trailing space
-            num_str = parentheses_match.group(2)
-            padded_num = num_str.zfill(max_parentheses_length)
-            new_base = f"{base_part} ({padded_num})"
-            new_filename = f"{new_base}{ext}"
-        
-        # Handle direct numeric suffixes: "filename123.ext"
-        direct_match = re.match(r'^(.*?)(\d+)$', base)
-        if direct_match and max_direct_length > 0:
-            base_part = direct_match.group(1)
-            num_str = direct_match.group(2)
-            padded_num = num_str.zfill(max_direct_length)
-            new_base = f"{base_part}{padded_num}"
-            new_filename = f"{new_base}{ext}"
-        
-        if new_filename != filename:
-            # Record the mapping but don't rename yet to avoid conflicts
-            filename_map[filename] = new_filename
-        else:
-            filename_map[filename] = filename
+    # 4. Add the renamed numbered files to the map, using a new 1-based index.
+    for i, file_info in enumerate(numbered_files, 1):
+        # Create a new name like 'temp_0001.jpg', 'temp_0002.jpg', etc.
+        new_name = f"temp_{str(i).zfill(4)}{file_info['ext']}"
+        filename_map[file_info['original']] = new_name
+
+    # 5. Add any files that were NOT numbered back into the map, with their original names.
+    # This ensures files like "cover.jpg" or "notes.txt" are not lost.
+    numbered_originals = {f['original'] for f in numbered_files}
+    for f in files:
+        if f not in numbered_originals:
+            filename_map[f] = f
             
     return filename_map
