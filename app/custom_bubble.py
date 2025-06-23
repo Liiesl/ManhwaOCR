@@ -1,12 +1,146 @@
 import os
+import json
+import functools
 from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QLabel, QComboBox, QPushButton, QSlider, QColorDialog, QFrame,
                              QGridLayout, QCheckBox, QSpinBox, QGroupBox, QFontComboBox, QHBoxLayout, QScrollArea,
-                             QSpacerItem, QSizePolicy)
-from PyQt5.QtCore import Qt, pyqtSignal
-from PyQt5.QtGui import QColor, QFont, QFontDatabase
+                             QSpacerItem, QSizePolicy, QMenu)
+from PyQt5.QtCore import Qt, pyqtSignal, QSettings
+from PyQt5.QtGui import (QColor, QFont, QFontDatabase, QPainter, QPen, QBrush,
+                         QLinearGradient)
 import qtawesome as qta
-# Assuming this exists and contains the base CSS
+# Assuming this exists and contains the base CSS and default style
 from assets.styles import TEXT_BOX_STYLE_PANEL_STYLESHEET, DEFAULT_GRADIENT
+
+def get_style_diff(style_dict, base_style_dict):
+    """Compares a style dict to a base and returns only the changed values."""
+    diff = {}
+    for key, value in style_dict.items():
+        if key not in base_style_dict or base_style_dict[key] != value:
+            # For nested dictionaries (like gradients), compare them deeply
+            if isinstance(value, dict) and key in base_style_dict and isinstance(base_style_dict[key], dict):
+                nested_diff = get_style_diff(value, base_style_dict[key])
+                if nested_diff:
+                    diff[key] = nested_diff
+            else:
+                diff[key] = value
+    return diff
+
+class PresetButton(QPushButton):
+    """A button that displays a preview of a style preset."""
+    overwrite_requested = pyqtSignal(int)
+    delete_requested = pyqtSignal(int)
+
+    def __init__(self, index, parent=None):
+        super().__init__(parent)
+        self.index = index
+        self._style = None
+        self.setFixedSize(48, 48)
+        self.setToolTip("Click to apply preset.\nRight-click for more options.")
+        self.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.customContextMenuRequested.connect(self._show_context_menu)
+
+    def set_style(self, style_dict):
+        """Sets the style for this preset and triggers a repaint."""
+        self._style = style_dict
+        self.update()
+
+    def _create_gradient_brush(self, rect, gradient_style):
+        """Creates a QLinearGradient brush from a style dict."""
+        direction = gradient_style.get('direction', 0)
+        if direction == 0:  # Horizontal
+            gradient = QLinearGradient(rect.topLeft(), rect.topRight())
+        elif direction == 1:  # Vertical
+            gradient = QLinearGradient(rect.topLeft(), rect.bottomLeft())
+        elif direction == 2:  # Diagonal TL-BR
+            gradient = QLinearGradient(rect.topLeft(), rect.bottomRight())
+        else:  # Diagonal BL-TR
+            gradient = QLinearGradient(rect.bottomLeft(), rect.topRight())
+
+        color1 = QColor(gradient_style.get('color1', '#ffffffff'))
+        color2 = QColor(gradient_style.get('color2', '#ff000000'))
+        
+        # NOTE: A simple 2-stop gradient is used for the preview.
+        # The actual midpoint is saved but not visually rendered here.
+        gradient.setColorAt(0, color1)
+        gradient.setColorAt(1, color2)
+        return QBrush(gradient)
+
+    def paintEvent(self, event):
+        """Paints the button with a style preview or as an empty slot."""
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing)
+        rect = self.rect().adjusted(2, 2, -2, -2) # Inset for border
+
+        if self._style is None:
+            # Draw empty, dashed slot
+            pen = QPen(QColor("#555555"), 1, Qt.DashLine)
+            painter.setPen(pen)
+            painter.setBrush(Qt.NoBrush)
+            painter.drawRect(self.rect().adjusted(0, 0, -1, -1))
+            return
+
+        # --- Create a full style by merging with a default baseline ---
+        full_style = DEFAULT_GRADIENT.copy() # Start with a minimal base
+        for key, value in self._style.items():
+            if isinstance(value, dict) and key in full_style:
+                full_style[key].update(value)
+            else:
+                full_style[key] = value
+
+        # --- Draw Background ---
+        border_width = full_style.get('border_width', 1)
+        pen = QPen(QColor(full_style.get('border_color', '#ff000000')), border_width)
+        pen.setJoinStyle(Qt.MiterJoin)
+        painter.setPen(pen)
+
+        fill_type = full_style.get('fill_type', 'solid')
+        if fill_type == 'linear_gradient':
+            bg_gradient = full_style.get('bg_gradient', {})
+            brush = self._create_gradient_brush(rect, bg_gradient)
+        else:
+            brush = QBrush(QColor(full_style.get('bg_color', '#ffffffff')))
+        painter.setBrush(brush)
+        painter.drawRect(rect)
+
+        # --- Draw Text ("Aa") ---
+        font = QFont(
+            full_style.get('font_family', 'Arial'),
+            14 # Fixed size for preview
+        )
+        font.setBold(full_style.get('font_bold', False))
+        font.setItalic(full_style.get('font_italic', False))
+        font.setStyleName(full_style.get('font_style', 'Regular'))
+        painter.setFont(font)
+        
+        text_color_type = full_style.get('text_color_type', 'solid')
+        if text_color_type == 'linear_gradient':
+            text_gradient = full_style.get('text_gradient', {})
+            # For text, we set the pen to use a gradient brush
+            gradient_brush = self._create_gradient_brush(rect, text_gradient)
+            text_pen = QPen()
+            text_pen.setBrush(gradient_brush)
+            painter.setPen(text_pen)
+        else:
+            painter.setPen(QColor(full_style.get('text_color', '#ff000000')))
+
+        painter.drawText(self.rect(), Qt.AlignCenter, "Aa")
+
+    def _show_context_menu(self, pos):
+        """Shows a context menu for overwriting or deleting a preset."""
+        if self._style is None:
+            return # No menu for empty slots
+
+        menu = QMenu(self)
+        overwrite_action = menu.addAction("Overwrite with current style")
+        delete_action = menu.addAction("Delete preset")
+        
+        action = menu.exec_(self.mapToGlobal(pos))
+        
+        if action == overwrite_action:
+            self.overwrite_requested.emit(self.index)
+        elif action == delete_action:
+            self.delete_requested.emit(self.index)
+
 
 class TextBoxStylePanel(QWidget):
     """
@@ -17,7 +151,9 @@ class TextBoxStylePanel(QWidget):
     def __init__(self, parent=None, default_style=None):
         super().__init__(parent)
         self.setObjectName("TextBoxStylePanel")
-        self.setMinimumWidth(300)
+        self.setMinimumWidth(400)
+        self.settings = QSettings("YourCompany", "MangaOCRTool")
+        self.presets = []
         # Store font style info separate from the main style dict initially
         self.font_styles = {} # { "Family Name": ["Style1", "Style2", ...] }
         self._original_default_style = default_style if default_style else {}
@@ -29,7 +165,7 @@ class TextBoxStylePanel(QWidget):
         self.init_ui() # Loads fonts, populates family combo
         # Apply defaults after UI is fully initialized
         self.update_style_panel(self._default_style)
-        # self.hide() # Hide until needed
+        self._load_presets()
 
     def _ensure_gradient_defaults(self, style_dict):
         """Ensures a style dictionary has default gradient fields including integer midpoint."""
@@ -47,7 +183,6 @@ class TextBoxStylePanel(QWidget):
         style['text_gradient'] = {**DEFAULT_GRADIENT, **style['text_gradient']}
 
         # --- Ensure colors are strings ---
-        # ... (color string conversion remains the same) ...
         if isinstance(style.get('bg_color'), QColor): style['bg_color'] = style['bg_color'].name(QColor.HexArgb)
         if isinstance(style.get('text_color'), QColor): style['text_color'] = style['text_color'].name(QColor.HexArgb)
         if isinstance(style['bg_gradient'].get('color1'), QColor): style['bg_gradient']['color1'] = style['bg_gradient']['color1'].name(QColor.HexArgb)
@@ -94,7 +229,6 @@ class TextBoxStylePanel(QWidget):
         scroll_layout.setSpacing(12)
 
         # --- Shape Group ---
-        # ... (Shape group remains the same) ...
         shape_group = QGroupBox("Shape")
         shape_group.setObjectName("styleGroup")
         shape_layout = QVBoxLayout(shape_group)
@@ -190,25 +324,21 @@ class TextBoxStylePanel(QWidget):
         self.spin_bg_gradient_midpoint.valueChanged.connect(self.style_changed_handler)
         bg_grad_mid_layout.addWidget(self.spin_bg_gradient_midpoint, 2)
         gradient_fill_layout.addLayout(bg_grad_mid_layout)
-        # --- End Midpoint Control ---
 
         bg_grad_dir_layout = QHBoxLayout()
         bg_grad_dir_label = QLabel("  Direction:")
         bg_grad_dir_layout.addWidget(bg_grad_dir_label, 1)
         self.combo_bg_gradient_direction = QComboBox()
         self.combo_bg_gradient_direction.setObjectName("styleCombo")
-        # --- Updated Direction Names ---
         self.combo_bg_gradient_direction.addItems([
             "Horizontal (L>R)",
             "Vertical (T>B)",
             "Diagonal (TL>BR)", # TopLeft to BottomRight
             "Diagonal (BL>TR)"  # BottomLeft to TopRight
         ])
-        # --- End Updated Names ---
         self.combo_bg_gradient_direction.currentIndexChanged.connect(self.style_changed_handler)
         bg_grad_dir_layout.addWidget(self.combo_bg_gradient_direction, 2)
         gradient_fill_layout.addLayout(bg_grad_dir_layout)
-
         color_layout.addWidget(self.gradient_fill_group)
 
         # Border Width & Color
@@ -227,7 +357,6 @@ class TextBoxStylePanel(QWidget):
         self.btn_border_color.clicked.connect(lambda: self.choose_color(self.btn_border_color))
         border_layout.addWidget(self.btn_border_color)
         color_layout.addLayout(border_layout)
-
         scroll_layout.addWidget(color_group)
 
         # --- Typography Group ---
@@ -237,10 +366,6 @@ class TextBoxStylePanel(QWidget):
         font_layout.setContentsMargins(10, 15, 10, 10)
         font_layout.setSpacing(8)
 
-
-
-        # --- Text Color ---
-        # ... (Text Color/Gradient controls remain the same, midpoint already added) ...
         # Text Color Type
         text_color_type_layout = QHBoxLayout()
         text_color_type_label = QLabel("Text Color Type:")
@@ -307,37 +432,31 @@ class TextBoxStylePanel(QWidget):
         text_grad_dir_layout.addWidget(text_grad_dir_label, 1)
         self.combo_text_gradient_direction = QComboBox()
         self.combo_text_gradient_direction.setObjectName("styleCombo")
-        # --- Updated Direction Names ---
         self.combo_text_gradient_direction.addItems([
             "Horizontal (L>R)",
             "Vertical (T>B)",
             "Diagonal (TL>BR)",
             "Diagonal (BL>TR)"
         ])
-        # --- End Updated Names ---
         self.combo_text_gradient_direction.currentIndexChanged.connect(self.style_changed_handler)
         text_grad_dir_layout.addWidget(self.combo_text_gradient_direction, 2)
         gradient_text_layout.addLayout(text_grad_dir_layout)
-
         font_layout.addWidget(self.gradient_text_group)
 
-        # --- Font Properties (Size, Bold, Italic) ---
-        # --- Font Selection ---
+        # --- Font Properties ---
         font_family_layout = QHBoxLayout()
         font_family_label = QLabel("Font:")
         font_family_layout.addWidget(font_family_label, 1)
         self.combo_font_family = QComboBox()
         self.combo_font_family.setObjectName("styleCombo")
-        # Load fonts *before* connecting signals that depend on font_styles
-        self.load_custom_fonts() # Populates self.combo_font_family and self.font_styles
+        self.load_custom_fonts()
         font_family_layout.addWidget(self.combo_font_family, 2)
         font_layout.addLayout(font_family_layout)
 
-        # --- Font Style Selection (NEW) ---
-        self.font_style_widget = QWidget() # Container for visibility toggle
+        self.font_style_widget = QWidget()
         self.font_style_layout = QHBoxLayout(self.font_style_widget)
         self.font_style_layout.setContentsMargins(0, 0, 0, 0)
-        self.font_style_layout.setSpacing(8) # Match other layouts
+        self.font_style_layout.setSpacing(8)
         font_style_label = QLabel("Style:")
         self.font_style_layout.addWidget(font_style_label, 1)
         self.combo_font_style = QComboBox()
@@ -345,11 +464,10 @@ class TextBoxStylePanel(QWidget):
         self.combo_font_style.currentIndexChanged.connect(self.style_changed_handler)
         self.font_style_layout.addWidget(self.combo_font_style, 2)
         font_layout.addWidget(self.font_style_widget)
-        self.font_style_widget.setVisible(False) # Initially hidden
+        self.font_style_widget.setVisible(False)
 
-        # Connect family change to style update *after* both combos exist
         self.combo_font_family.currentIndexChanged.connect(self._update_font_style_combo)
-        self.combo_font_family.currentIndexChanged.connect(self.style_changed_handler) # Keep this too
+        self.combo_font_family.currentIndexChanged.connect(self.style_changed_handler)
         font_props_layout = QHBoxLayout()
         font_size_label = QLabel("Size:")
         font_props_layout.addWidget(font_size_label)
@@ -364,20 +482,17 @@ class TextBoxStylePanel(QWidget):
         self.btn_font_bold.setObjectName("boldButton")
         self.btn_font_bold.setToolTip("Bold")
         self.btn_font_bold.stateChanged.connect(self.style_changed_handler)
-        bold_icon = qta.icon('fa5s.bold', color='white')
-        self.btn_font_bold.setIcon(bold_icon)
+        self.btn_font_bold.setIcon(qta.icon('fa5s.bold', color='white'))
         font_props_layout.addWidget(self.btn_font_bold)
         self.btn_font_italic = QCheckBox("")
         self.btn_font_italic.setObjectName("italicButton")
         self.btn_font_italic.setToolTip("Italic")
         self.btn_font_italic.stateChanged.connect(self.style_changed_handler)
-        italic_icon = qta.icon('fa5s.italic', color='white')
-        self.btn_font_italic.setIcon(italic_icon)
+        self.btn_font_italic.setIcon(qta.icon('fa5s.italic', color='white'))
         font_props_layout.addWidget(self.btn_font_italic)
         font_props_layout.addStretch()
         font_layout.addLayout(font_props_layout)
 
-        # --- Alignment & Auto-Size ---
         alignment_layout = QHBoxLayout()
         alignment_label = QLabel("Alignment:")
         alignment_layout.addWidget(alignment_label, 1)
@@ -385,23 +500,20 @@ class TextBoxStylePanel(QWidget):
         alignment_buttons_layout.setSpacing(0)
         self.radio_align_left = QCheckBox("")
         self.radio_align_left.setObjectName("alignButton")
-        left_icon = qta.icon('fa5s.align-left', color='white')
-        self.radio_align_left.setIcon(left_icon)
+        self.radio_align_left.setIcon(qta.icon('fa5s.align-left', color='white'))
         self.radio_align_left.setToolTip("Align Left")
         self.radio_align_left.clicked.connect(lambda: self.set_alignment(0))
         alignment_buttons_layout.addWidget(self.radio_align_left)
         self.radio_align_center = QCheckBox("")
         self.radio_align_center.setObjectName("alignButton")
-        center_icon = qta.icon('fa5s.align-center', color='white')
-        self.radio_align_center.setIcon(center_icon)
+        self.radio_align_center.setIcon(qta.icon('fa5s.align-center', color='white'))
         self.radio_align_center.setToolTip("Align Center")
         self.radio_align_center.setChecked(True)
         self.radio_align_center.clicked.connect(lambda: self.set_alignment(1))
         alignment_buttons_layout.addWidget(self.radio_align_center)
         self.radio_align_right = QCheckBox("")
         self.radio_align_right.setObjectName("alignButton")
-        right_icon = qta.icon('fa5s.align-right', color='white')
-        self.radio_align_right.setIcon(right_icon)
+        self.radio_align_right.setIcon(qta.icon('fa5s.align-right', color='white'))
         self.radio_align_right.setToolTip("Align Right")
         self.radio_align_right.clicked.connect(lambda: self.set_alignment(2))
         alignment_buttons_layout.addWidget(self.radio_align_right)
@@ -429,8 +541,43 @@ class TextBoxStylePanel(QWidget):
         scroll_area.setWidget(scroll_content)
         main_layout.addWidget(scroll_area)
 
+        # --- Presets Group (Scrollable & Dynamic) ---
+        presets_group = QGroupBox("Presets")
+        presets_group.setObjectName("styleGroup")
+        presets_main_layout = QHBoxLayout(presets_group)
+        presets_main_layout.setContentsMargins(10, 15, 10, 10)
+        presets_main_layout.setSpacing(6)
+
+        # Scroll Area for preset buttons
+        preset_scroll_area = QScrollArea()
+        preset_scroll_area.setWidgetResizable(True)
+        preset_scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        preset_scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        preset_scroll_area.setFrameShape(QFrame.NoFrame)
+        preset_scroll_area.setStyleSheet("background-color: transparent;")
+
+        # Container widget and layout for the buttons
+        self.preset_buttons_container = QWidget()
+        self.presets_buttons_layout = QHBoxLayout(self.preset_buttons_container)
+        self.presets_buttons_layout.setContentsMargins(0, 0, 0, 0)
+        self.presets_buttons_layout.setSpacing(6)
+        
+        preset_scroll_area.setWidget(self.preset_buttons_container)
+        presets_main_layout.addWidget(preset_scroll_area)
+
+        self.preset_buttons = [] # This list will be populated by _rebuild_preset_ui
+
+        # The Add button is now outside the scroll area for permanent visibility
+        self.btn_add_preset = QPushButton(qta.icon('fa5s.plus'), "")
+        self.btn_add_preset.setToolTip("Save current style as a new preset")
+        self.btn_add_preset.setFixedSize(48, 48)
+        self.btn_add_preset.setObjectName("addPresetButton")
+        self.btn_add_preset.clicked.connect(self._add_preset)
+        presets_main_layout.addWidget(self.btn_add_preset)
+
+        main_layout.addWidget(presets_group)
+
         # --- Button Bar ---
-        # ... (Button bar remains the same) ...
         button_container = QWidget()
         button_container.setObjectName("buttonContainer")
         button_layout = QHBoxLayout(button_container)
@@ -449,41 +596,148 @@ class TextBoxStylePanel(QWidget):
         # --- Apply Stylesheet ---
         self.setStyleSheet(TEXT_BOX_STYLE_PANEL_STYLESHEET + """
             #gradientMidpointSpinBox {
-                background-color: #3A3A3A;
-                color: #FFFFFF;
-                border: 1px solid #4A4A4A;
-                padding: 5px;
-                border-radius: 3px;
-                min-height: 24px;
-                font-size: 18px; /* Smaller font maybe */
-                max-width: 70px; /* Adjust width */
+                background-color: #3A3A3A; color: #FFFFFF; border: 1px solid #4A4A4A;
+                padding: 5px; border-radius: 3px; min-height: 24px; font-size: 18px; max-width: 70px;
             }
-            #styleCombo { /* Ensure style combo has consistent look */
-                min-height: 28px; /* Match font family combo */
-                padding-left: 8px;
-            }
+            #styleCombo { min-height: 28px; padding-left: 8px; }
+            #addPresetButton { background-color: #333; border: 1px solid #555; border-radius: 3px; }
+            #addPresetButton:hover { background-color: #444; border-color: #666; }
         """)
 
         # --- Initial Control State ---
         self._toggle_fill_gradient_controls()
         self._toggle_text_gradient_controls()
-        self._update_font_style_combo() # Update based on initial font
+        self._update_font_style_combo()
 
+    # --- Preset Management ---
+    def _rebuild_preset_ui(self):
+        """Clears and rebuilds the preset button UI from the self.presets list."""
+        # Clear the layout first
+        while self.presets_buttons_layout.count():
+            child = self.presets_buttons_layout.takeAt(0)
+            if child.widget():
+                child.widget().deleteLater()
+        
+        self.preset_buttons.clear()
+
+        # Re-populate from the self.presets list
+        for i, style in enumerate(self.presets):
+            preset_button = PresetButton(i, self)
+            preset_button.set_style(style)
+            preset_button.clicked.connect(functools.partial(self._on_preset_clicked, i))
+            preset_button.overwrite_requested.connect(self._overwrite_preset)
+            preset_button.delete_requested.connect(self._delete_preset)
+            self.preset_buttons.append(preset_button)
+            self.presets_buttons_layout.addWidget(preset_button)
+        
+        # Add a stretch at the end to keep buttons aligned to the left
+        self.presets_buttons_layout.addStretch()
+        
+        # The add button is always enabled for creating new presets
+        self.btn_add_preset.setEnabled(True)
+
+# In custom_bubble.py, inside the TextBoxStylePanel class:
+
+    def _load_presets(self):
+        """Loads presets from QSettings by reading sequential keys."""
+        self.presets = []
+        
+        # --- FIX: Use beginGroup/endGroup for reading to mirror the saving logic ---
+        # This makes the code more robust and symmetrical.
+        self.settings.beginGroup("style_presets")
+        i = 0
+        while True:
+            # Now we use the relative key "preset_i", as QSettings knows the group context.
+            key = f"preset_{i}"
+            preset_str = self.settings.value(key, None)
+            
+            if preset_str is None:
+                # No more presets found in the group.
+                break
+            
+            try:
+                self.presets.append(json.loads(preset_str))
+            except (json.JSONDecodeError, TypeError):
+                print(f"Warning: Could not load preset at index {i}. It will be removed on next save.")
+            i += 1
+            
+        self.settings.endGroup()
+        
+        self._rebuild_preset_ui()
+
+    def _save_presets(self):
+        """Saves the current presets to QSettings, overwriting old ones."""
+        self.settings.beginGroup("style_presets")
+        self.settings.remove("") # Clear all keys in this group first
+        for i, preset in enumerate(self.presets):
+            if preset: # Don't save None placeholders
+                self.settings.setValue(f"preset_{i}", json.dumps(preset))
+        self.settings.endGroup()
+        
+        # --- FIX: Explicitly write changes to persistent storage ---
+        # This ensures that settings are saved immediately and not just on app exit.
+        self.settings.sync()
+
+    def _on_preset_clicked(self, index):
+        """Applies a preset style to the panel when a preset button is clicked."""
+        if not (0 <= index < len(self.presets)):
+            return
+            
+        style_diff = self.presets[index]
+        if style_diff is None:
+            return
+
+        # Deep merge the diff with the panel's own default style
+        full_style = json.loads(json.dumps(self._default_style))  # Deep copy
+        for key, value in style_diff.items():
+            if isinstance(value, dict) and key in full_style:
+                full_style[key].update(value)
+            else:
+                full_style[key] = value
+
+        self.update_style_panel(full_style)
+        self.style_changed_handler()
+
+    def _add_preset(self):
+        """Saves the current style as a new preset."""
+        current_style = self.get_current_style()
+        style_diff = get_style_diff(current_style, self._default_style)
+        self.presets.append(style_diff)
+        self._save_presets()
+        self._rebuild_preset_ui()
+        print(f"New preset saved. Total presets: {len(self.presets)}.")
+
+    def _overwrite_preset(self, index):
+        """Saves the current style over a specific preset slot."""
+        if not (0 <= index < len(self.presets)):
+            return
+        current_style = self.get_current_style()
+        style_diff = get_style_diff(current_style, self._default_style)
+        self.presets[index] = style_diff
+        self._save_presets()
+        self._rebuild_preset_ui() # Rebuild to update the visual
+        print(f"Preset at slot {index + 1} overwritten.")
+
+    def _delete_preset(self, index):
+        """Deletes a preset from a specific slot."""
+        if not (0 <= index < len(self.presets)):
+            return
+        self.presets.pop(index)
+        self._save_presets()
+        self._rebuild_preset_ui()
+        print(f"Preset at slot {index + 1} deleted.")
 
     # --- Methods for toggling gradient controls ---
     def _toggle_fill_gradient_controls(self):
         is_gradient = self.combo_fill_type.currentIndex() == 1
         self.gradient_fill_group.setVisible(is_gradient)
-        # self.solid_fill_layout.setVisible(not is_gradient) # Optional
 
     def _toggle_text_gradient_controls(self):
         is_gradient = self.combo_text_color_type.currentIndex() == 1
         self.gradient_text_group.setVisible(is_gradient)
-        # self.solid_text_color_layout.setVisible(not is_gradient) # Optional
 
     # --- Alignment Helper ---
     def set_alignment(self, index):
-        # ... (remains the same) ...
         self._updating_controls = True
         self.combo_text_alignment.setCurrentIndex(index)
         self.radio_align_left.setChecked(index == 0)
@@ -496,7 +750,6 @@ class TextBoxStylePanel(QWidget):
     def load_custom_fonts(self):
         """Loads custom fonts, groups them by family, and populates the family combo."""
         self.font_styles.clear()
-        # Keep track of families already added to the combo box
         added_families = set()
         self.combo_font_family.clear()
         self.combo_font_family.addItem("Default (System Font)")
@@ -508,7 +761,7 @@ class TextBoxStylePanel(QWidget):
             return
 
         db = QFontDatabase()
-        loaded_families = set() # Track families loaded in this session
+        loaded_families = set()
 
         for file in os.listdir(fonts_dir):
             if file.lower().endswith(('.ttf', '.otf')):
@@ -521,12 +774,9 @@ class TextBoxStylePanel(QWidget):
                 else:
                      print(f"Warning: Could not load font: {font_path}")
 
-        # Now iterate through loaded families to get styles
-        for family in sorted(list(loaded_families)): # Sort for consistency
+        for family in sorted(list(loaded_families)):
             styles = db.styles(family)
             filtered_styles = []
-            # Filter out styles containing 'Bold' or 'Italic' (case-insensitive)
-            # Keep 'Regular' or equivalent common names explicitly if needed.
             has_regular = False
             for style in styles:
                 style_lower = style.lower()
@@ -535,28 +785,23 @@ class TextBoxStylePanel(QWidget):
                      if style_lower == "regular" or style_lower == "normal" or style_lower == "book":
                          has_regular = True
 
-            # If only Bold/Italic styles existed, add 'Regular' if QFontDatabase lists it,
-            # otherwise maybe add the first original style back? Or leave empty.
-            # Let's keep it simple: only add non-bold/italic styles.
-            # If after filtering, the list is empty, maybe add "Regular" if it exists in the original list?
             if not filtered_styles and "Regular" in styles:
                  filtered_styles.append("Regular")
             elif not filtered_styles and styles: # If only bold/italic, maybe add the first non-filtered one? Risky.
                 pass # Keep filtered_styles empty if only bold/italic variants exist
 
-            if filtered_styles: # Only store families that have non-bold/italic styles
-                self.font_styles[family] = sorted(filtered_styles) # Store sorted styles
+            if filtered_styles:
+                self.font_styles[family] = sorted(filtered_styles)
 
-            # Add family to combo box only once
             if family not in added_families:
                 self.combo_font_family.addItem(family)
                 added_families.add(family)
 
     def _update_font_style_combo(self):
         """Populates the font style combo based on the selected family."""
-        if self._updating_controls: return # Prevent recursion
+        if self._updating_controls: return
 
-        self._updating_controls = True # Set flag
+        self._updating_controls = True
 
         current_family = self.combo_font_family.currentText()
         self.combo_font_style.clear()
@@ -565,7 +810,6 @@ class TextBoxStylePanel(QWidget):
             styles = self.font_styles[current_family]
             self.combo_font_style.addItems(styles)
 
-            # Try to select "Regular" or the first available style
             default_style = "Regular"
             if default_style in styles:
                 self.combo_font_style.setCurrentText(default_style)
@@ -574,12 +818,9 @@ class TextBoxStylePanel(QWidget):
 
             self.font_style_widget.setVisible(True)
         else:
-            # Hide style combo for default font or fonts with no selectable styles
             self.font_style_widget.setVisible(False)
 
-        self._updating_controls = False # Clear flag
-
-        # No need to call style_changed_handler here, it's called by the family combo change signal
+        self._updating_controls = False
 
     # --- Color Helpers ---
     def set_button_color(self, button, color):
@@ -588,25 +829,11 @@ class TextBoxStylePanel(QWidget):
         button.setStyleSheet(f"background-color: {color.name(QColor.HexArgb)}; border: 1px solid #60666E; border-radius: 3px;")
 
     def choose_color(self, button):
-        # ... (remains the same) ...
         current_color = self._get_color_from_button(button)
-        color = QColorDialog.getColor(initial=current_color)
+        color = QColorDialog.getColor(initial=current_color, options=QColorDialog.ShowAlphaChannel)
         if color.isValid():
             self.set_button_color(button, color)
             self.style_changed_handler()
-
-#    def choose_color(self, button):
-#        """Opens the custom color dialog to choose a color for the button."""
-#        current_color = self._get_color_from_button(button)
-#        # Use the custom color dialog instead of QColorDialog
-#        # Pass the current button color as initial_color and self as parent
-#        color = CustomColorDialog.getColor(initial_color=current_color, parent=self)
-#
-#        # The rest of the logic remains the same:
-#        # Check if a valid color was returned (CustomColorDialog.getColor returns the selected color on accept)
-#        if color is not None and color.isValid():
-#            self.set_button_color(button, color)
-#            self.style_changed_handler() # Emit signal that style might have changed
 
     def _get_color_from_button(self, button):
         style = button.styleSheet()
@@ -617,17 +844,14 @@ class TextBoxStylePanel(QWidget):
         except:
             return QColor(0, 0, 0)
 
-
     # --- Style Get/Set/Reset ---
     def get_current_style(self):
         """Get the current style settings including font family and style."""
-        # Font Family and Style
-        font_family = "Arial" # Default fallback
+        font_family = "Arial"
         selected_family_text = self.combo_font_family.currentText()
-        font_style = "Regular" # Default fallback
+        font_style = "Regular"
 
         if selected_family_text == "Default (System Font)":
-            # Use the actual default style's font if available, else Arial
             font_family = self._default_style.get('font_family', "Arial")
             font_style = self._default_style.get('font_style', "Regular")
         elif selected_family_text in self.font_styles:
@@ -635,18 +859,13 @@ class TextBoxStylePanel(QWidget):
             if self.font_style_widget.isVisible() and self.combo_font_style.count() > 0:
                 font_style = self.combo_font_style.currentText()
             else:
-                # If style combo is hidden but family is custom, use its default style if known, else Regular
                 font_style = self.font_styles[font_family][0] if self.font_styles[font_family] else "Regular"
         else:
-            # Should not happen if combo is populated correctly, but fallback
-            font_family = selected_family_text # Use the text directly if not in font_styles? Risky.
+            font_family = selected_family_text
 
         style = {
-            # Shape
             'bubble_type': self.combo_bubble_type.currentIndex(),
             'corner_radius': self.spin_corner_radius.value(),
-
-            # Fill & Stroke
             'border_width': self.spin_border_width.value(),
             'border_color': self._get_color_from_button(self.btn_border_color).name(QColor.HexArgb),
             'fill_type': 'solid' if self.combo_fill_type.currentIndex() == 0 else 'linear_gradient',
@@ -657,8 +876,6 @@ class TextBoxStylePanel(QWidget):
                 'direction': self.combo_bg_gradient_direction.currentIndex(),
                 'midpoint': self.spin_bg_gradient_midpoint.value(),
             },
-
-            # Text Color
             'text_color_type': 'solid' if self.combo_text_color_type.currentIndex() == 0 else 'linear_gradient',
             'text_color': self._get_color_from_button(self.btn_text_color).name(QColor.HexArgb),
             'text_gradient': {
@@ -667,10 +884,8 @@ class TextBoxStylePanel(QWidget):
                 'direction': self.combo_text_gradient_direction.currentIndex(),
                 'midpoint': self.spin_text_gradient_midpoint.value(),
             },
-
-            # Typography
             'font_family': font_family,
-            'font_style': font_style, # Added font style
+            'font_style': font_style,
             'font_size': self.spin_font_size.value(),
             'font_bold': self.btn_font_bold.isChecked(),
             'font_italic': self.btn_font_italic.isChecked(),
@@ -688,36 +903,32 @@ class TextBoxStylePanel(QWidget):
         self.style_changed.emit(self.get_current_style())
 
     def reset_style(self):
-        # Reset to the augmented default style (which includes midpoint: 0.5)
         self.update_style_panel(self._default_style)
-        self.style_changed_handler() # Emit the reset style
+        self.style_changed_handler()
 
     def update_style_panel(self, style_dict_in):
         if not style_dict_in:
-            style_dict = self._default_style # Use augmented default with int midpoint
+            style_dict = self._default_style
         else:
-            style_dict = self._ensure_gradient_defaults(style_dict_in) # Ensure incoming has int midpoint
+            style_dict = self._ensure_gradient_defaults(style_dict_in)
 
-        self._updating_controls = True # Prevent signals during update
+        self._updating_controls = True
         self.selected_style_info = style_dict
 
-        # --- Update Shape, Fill, Stroke, Text Color (same as before) ---
         self.combo_bubble_type.setCurrentIndex(style_dict.get('bubble_type', 1))
         self.spin_corner_radius.setValue(style_dict.get('corner_radius', 50))
         self.spin_border_width.setValue(style_dict.get('border_width', 1))
         self.set_button_color(self.btn_border_color, style_dict.get('border_color', '#ff000000'))
 
-        # Fill
         fill_type = style_dict.get('fill_type', 'solid')
         self.combo_fill_type.setCurrentIndex(1 if fill_type == 'linear_gradient' else 0)
         self.set_button_color(self.btn_bg_color, style_dict.get('bg_color', '#ffffffff'))
-        bg_gradient = style_dict.get('bg_gradient', DEFAULT_GRADIENT) # Use default as fallback
+        bg_gradient = style_dict.get('bg_gradient', DEFAULT_GRADIENT)
         self.set_button_color(self.btn_bg_gradient_color1, bg_gradient.get('color1'))
         self.set_button_color(self.btn_bg_gradient_color2, bg_gradient.get('color2'))
         self.combo_bg_gradient_direction.setCurrentIndex(bg_gradient.get('direction'))
         self.spin_bg_gradient_midpoint.setValue(int(bg_gradient.get('midpoint', 50)))
 
-        # Text Color
         text_color_type = style_dict.get('text_color_type', 'solid')
         self.combo_text_color_type.setCurrentIndex(1 if text_color_type == 'linear_gradient' else 0)
         self.set_button_color(self.btn_text_color, style_dict.get('text_color', '#ff000000'))
@@ -727,33 +938,26 @@ class TextBoxStylePanel(QWidget):
         self.combo_text_gradient_direction.setCurrentIndex(text_gradient.get('direction'))
         self.spin_text_gradient_midpoint.setValue(int(text_gradient.get('midpoint', 50)))
 
-        # --- Update Typography ---
         font_family = style_dict.get('font_family', "Arial")
         font_style = style_dict.get('font_style', 'Regular')
 
-        # Set Font Family
         index = self.combo_font_family.findText(font_family)
         if index != -1:
             self.combo_font_family.setCurrentIndex(index)
         else:
-            # Fallback if family not found (e.g., font removed)
             default_index = self.combo_font_family.findText("Default (System Font)")
             self.combo_font_family.setCurrentIndex(default_index if default_index != -1 else 0)
             print(f"Warning: Font family '{font_family}' not found, using default.")
-            # Update font_family to the one actually selected for style lookup
             font_family = self.combo_font_family.currentText()
 
-        # Set Font Style *after* family selection might have populated the style combo
         if self.font_style_widget.isVisible():
             style_index = self.combo_font_style.findText(font_style)
             if style_index != -1:
                 self.combo_font_style.setCurrentIndex(style_index)
             elif self.combo_font_style.count() > 0:
-                # Fallback to first available style if specified one not found
                 self.combo_font_style.setCurrentIndex(0)
                 print(f"Warning: Font style '{font_style}' not found for family '{font_family}', using first available.")
 
-        # Set other font properties
         self.spin_font_size.setValue(style_dict.get('font_size', 12))
         self.btn_font_bold.setChecked(style_dict.get('font_bold', False))
         self.btn_font_italic.setChecked(style_dict.get('font_italic', False))
@@ -764,7 +968,6 @@ class TextBoxStylePanel(QWidget):
         self.radio_align_right.setChecked(alignment_index == 2)
         self.chk_auto_font_size.setChecked(style_dict.get('auto_font_size', True))
 
-        # Toggle visibility AFTER setting values
         self._toggle_fill_gradient_controls()
         self._toggle_text_gradient_controls()
 

@@ -15,6 +15,7 @@ class ResultsWidget(QWidget):
         self.main_window = main_window
         self.combine_action = combine_action
         self.find_action = find_action
+        self.focused_column = 0  # Default to text column being stretched
         self._init_ui()
         
     def _init_ui(self):
@@ -30,20 +31,28 @@ class ResultsWidget(QWidget):
         self.results_table = QTableWidget()
         self.results_table.setColumnCount(6)
         self.results_table.setHorizontalHeaderLabels(["Text", "Confidence", "Coordinates", "File", "Row Number", ""])
-        self.results_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch)
-        self.results_table.setColumnWidth(1, 50)
-        self.results_table.setColumnWidth(2, 50)
-        self.results_table.setColumnWidth(3, 50)
-        self.results_table.setColumnWidth(4, 50)
+
+        # --- Column resizing and word wrap changes ---
+        # Disable word wrap to allow the focused column to expand on a single line.
+        self.results_table.setWordWrap(False)
+        # Set a fixed row height as dynamic height adjustment is no longer needed.
+        self.results_table.verticalHeader().setDefaultSectionSize(40)
+        
+        # The delete button column (5) should always have a fixed size.
         self.results_table.setColumnWidth(5, 50)
         self.results_table.horizontalHeader().setSectionResizeMode(5, QHeaderView.Fixed)
+
         self.results_table.setContextMenuPolicy(Qt.ActionsContextMenu)
-        self.results_table.setWordWrap(True)
         self.results_table.setItemDelegateForColumn(0, TextEditDelegate(self))
         self.results_table.addAction(self.combine_action)
         self.results_table.addAction(self.find_action)
         self.results_table.cellChanged.connect(self.on_cell_changed)
-        self.results_table.installEventFilter(self)
+        
+        # Connect signal to handle dynamic column resizing on focus change.
+        self.results_table.currentCellChanged.connect(self.on_table_focus_changed)
+        # Set the initial column sizes.
+        self.update_column_resize_modes()
+        # --- End of changes ---
 
         # Simple View: Scrollable List
         self.simple_view_widget = QWidget()
@@ -161,8 +170,45 @@ class ResultsWidget(QWidget):
             delete_btn.clicked.connect(lambda _, rn=original_row_number: self.main_window.delete_row(rn))
             self.results_table.setCellWidget(visible_row_index, 5, container)
 
-        self.adjust_row_heights()
         self.results_table.blockSignals(False)
+
+    def on_table_focus_changed(self, currentRow, currentColumn, previousRow, previousColumn):
+        """
+        Handles dynamic column resizing when the user changes the focused cell.
+        The focused column is expanded, and others are shrunk.
+        """
+        # Ignore focus changes on the last column (delete button)
+        if currentColumn == self.results_table.columnCount() - 1:
+            return
+
+        if currentColumn >= 0 and currentColumn != self.focused_column:
+            self.focused_column = currentColumn
+            self.update_column_resize_modes()
+
+    def update_column_resize_modes(self):
+        """
+        Sets column resize modes based on self.focused_column. The focused column
+        stretches, while others become fixed-width.
+        """
+        header = self.results_table.horizontalHeader()
+
+        # Iterate over all data columns (0 to 4)
+        for col_index in range(self.results_table.columnCount() - 1):
+            if col_index == self.focused_column:
+                header.setSectionResizeMode(col_index, QHeaderView.Stretch)
+            else:
+                header.setSectionResizeMode(col_index, QHeaderView.Fixed)
+                # Assign reasonable shrunken widths for non-focused columns
+                if col_index == 0:    # Text
+                    self.results_table.setColumnWidth(col_index, 200)
+                elif col_index == 1:  # Confidence
+                    self.results_table.setColumnWidth(col_index, 80)
+                elif col_index == 2:  # Coordinates
+                    self.results_table.setColumnWidth(col_index, 150)
+                elif col_index == 3:  # File
+                    self.results_table.setColumnWidth(col_index, 150)
+                elif col_index == 4:  # Row Number
+                    self.results_table.setColumnWidth(col_index, 80)
 
     def on_cell_changed(self, row, column):
         item = self.results_table.item(row, column)
@@ -190,7 +236,6 @@ class ResultsWidget(QWidget):
                 self.results_table.blockSignals(True)
                 item.setText(str(new_value))
                 self.results_table.blockSignals(False)
-                if column == 0: self.adjust_row_heights()
                 break
 
     def _update_simple_view_text_if_visible(self, original_row_number, new_text):
@@ -206,27 +251,6 @@ class ResultsWidget(QWidget):
                          text_edit.setText(new_text)
                      text_edit.blockSignals(False)
                  break
-
-    def adjust_row_heights(self):
-        font_metrics = QFontMetrics(self.results_table.font())
-        base_padding = 10
-        for row in range(self.results_table.rowCount()):
-            text_item = self.results_table.item(row, 0)
-            if text_item:
-                text = text_item.text()
-                column_width = self.results_table.columnWidth(0) - 10
-                if column_width > 0:
-                    rect = font_metrics.boundingRect(0, 0, column_width, 0, Qt.TextWordWrap, text)
-                    required_height = rect.height() + base_padding
-                    min_height = 40
-                    self.results_table.setRowHeight(row, max(required_height, min_height))
-            else:
-                self.results_table.setRowHeight(row, 40)
-
-    def eventFilter(self, obj, event):
-        if obj == self.results_table and event.type() == QEvent.Resize:
-            self.adjust_row_heights()
-        return super().eventFilter(obj, event)
 
     def combine_selected_rows(self):
         selected_ranges = self.results_table.selectedRanges()

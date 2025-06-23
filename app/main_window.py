@@ -1,14 +1,10 @@
-from PyQt5.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QSizePolicy, QFrame, QScrollArea,
-                             QCheckBox, QPushButton, QTableWidget, QTableWidgetItem, QMessageBox, QSplitter,
-                             QAction, QTextEdit, QLabel)
-from PyQt5.QtCore import Qt, QSettings, QEvent, QPoint, QBuffer
-from PyQt5.QtGui import QPixmap, QKeySequence, QFontMetrics, QColor
+from PyQt5.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QSizePolicy,
+                             QCheckBox, QPushButton,  QMessageBox, QSplitter, QAction, QLabel)
+from PyQt5.QtCore import Qt, QSettings
+from PyQt5.QtGui import QPixmap, QKeySequence, QColor
 import qtawesome as qta
 from core.ocr_processor import OCRProcessor
 from utils.file_io import export_ocr_results, import_translation_file, export_rendered_images
-# core.data_processing is now only used by the manual handler, but we keep it here in case
-# other future features need it. It's a small dependency.
-from core.data_processing import group_and_merge_text
 from app.image_area import ResizableImageLabel
 from app.ui_widget import CustomProgressBar, MenuBar, CustomScrollArea
 from app.results_widget import ResultsWidget
@@ -17,12 +13,8 @@ from app.find_replace import FindReplaceWidget
 from utils.settings import SettingsDialog
 from core.translations import TranslationThread, generate_for_translate_content, import_translation_file_content
 from assets.styles import (COLORS, MAIN_STYLESHEET, IV_BUTTON_STYLES, ADVANCED_CHECK_STYLES, RIGHT_WIDGET_STYLES,
-                        PROGRESS_STYLES, DEFAULT_TEXT_STYLE, DELETE_ROW_STYLES, get_style_diff)
-import easyocr, os, gc, json, zipfile, math, PIL, io, sys, traceback
-import numpy as np
-from PIL import Image
-
-# --- NEW IMPORT ---
+                            DEFAULT_TEXT_STYLE, DELETE_ROW_STYLES, get_style_diff)
+import easyocr, os, gc, json, zipfile, math, sys, traceback
 from app.manual_ocr_handler import ManualOCRHandler
 
 class MainWindow(QMainWindow):
@@ -309,7 +301,8 @@ class MainWindow(QMainWindow):
         master_path = os.path.join(temp_dir, 'master.json')
         if os.path.exists(master_path):
             try:
-                with open(master_path, 'r') as f:
+                # --- FIX: Added encoding='utf-8' to handle non-ASCII characters ---
+                with open(master_path, 'r', encoding='utf-8') as f:
                     loaded_results = json.load(f)
                     max_row_num = -1
                     valid_results_loaded = []
@@ -330,7 +323,10 @@ class MainWindow(QMainWindow):
         meta_path = os.path.join(temp_dir, 'meta.json')
         if os.path.exists(meta_path):
             try:
-                with open(meta_path, 'r') as f: meta = json.load(f); self.original_language = meta.get('original_language', 'Korean')
+                # --- FIX: Added encoding='utf-8' to handle non-ASCII characters ---
+                with open(meta_path, 'r', encoding='utf-8') as f: 
+                    meta = json.load(f)
+                    self.original_language = meta.get('original_language', 'Korean')
             except (json.JSONDecodeError, FileNotFoundError) as e:
                 print(f"Warning: Could not load or parse meta.json: {e}. Using default language.")
         else:

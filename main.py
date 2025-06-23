@@ -1,9 +1,12 @@
 import sys
 from PyQt5.QtWidgets import (QApplication, QWidget, QVBoxLayout, QPushButton,  QFrame, QMainWindow, QLabel, QMessageBox,
                              QScrollArea, QHBoxLayout, QDialog)
-from PyQt5.QtCore import Qt, QSettings, QDateTime, QThread, pyqtSignal
+# MODIFIED: Added QEvent for the changeEvent handler
+from PyQt5.QtCore import Qt, QSettings, QDateTime, QThread, pyqtSignal, QEvent
 from utils.project_processing import new_project, open_project, import_from_wfwf, correct_filenames
 from assets.styles import (HOME_STYLES, HOME_LEFT_LAYOUT_STYLES)
+# MODIFIED: Import CustomTitleBar and WindowResizer from the new chrome.py file
+from app.chrome import CustomTitleBar, WindowResizer
 import os, zipfile, tempfile
 from shutil import rmtree
 
@@ -125,7 +128,8 @@ class LoadingDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Opening Project...")
-        self.setWindowFlag(Qt.FramelessWindowHint)
+        ## MODIFIED: Go frameless
+        self.setWindowFlags(Qt.FramelessWindowHint | Qt.Dialog)
         self.setWindowModality(Qt.ApplicationModal)
         self.setFixedSize(200, 100)
         layout = QVBoxLayout()
@@ -137,6 +141,7 @@ class LoadingDialog(QDialog):
             QDialog {
                 background-color: #1D1D1D;
                 color: #FFFFFF;
+                border: 1px solid #3E3E3E; /* Add a border for definition */
             }
             QLabel {
                 background-color: none;
@@ -173,22 +178,52 @@ class Home(QMainWindow):
     def __init__(self):
         super().__init__()
         self.settings = QSettings("YourCompany", "MangaOCRTool")
+        
+        ## MODIFIED: Go frameless ##
+        self.setWindowFlags(Qt.FramelessWindowHint)
+        self.setAttribute(Qt.WA_TranslucentBackground) # Makes rounded corners possible if desired
+        
         self.init_ui()
+        # MODIFIED: Instantiate the resizer class to make the window resizable
+        self.resizer = WindowResizer(self)
         
     def init_ui(self):
-        self.setWindowTitle("ManhwaOCR")
+        # self.setWindowTitle("ManhwaOCR") # No longer needed, title is in custom bar
         self.setMinimumSize(800, 600)
         
+        # ## MODIFIED: Layout structure for frameless window ##
+        # Main container widget
+        self.container = QFrame()
+        self.container.setObjectName("container")
+        self.container.setStyleSheet("""
+            #container {{
+                background-color: #1D1D1D;
+                border-radius: 8px; /* Optional: for rounded corners */
+                border: 1px solid #3E3E3E;
+            }}
+        """)
+
+        # Main vertical layout
+        self.main_layout = QVBoxLayout(self.container)
+        self.main_layout.setContentsMargins(1, 1, 1, 1) # Small margin for the border
+        self.main_layout.setSpacing(0)
+        
+        # Add custom title bar
+        self.title_bar = CustomTitleBar(self)
+        self.main_layout.addWidget(self.title_bar)
+
         # Set the dark theme
         self.setStyleSheet(HOME_STYLES)
         
         # Create central widget
-        self.central_widget = QWidget()
-        self.setCentralWidget(self.central_widget)
+        self.content_widget = QWidget() # This will hold the original layout
+        self.main_layout.addWidget(self.content_widget)
+
+        self.setCentralWidget(self.container)
         
-        # Main layout
-        self.main_layout = QHBoxLayout(self.central_widget)
-        self.main_layout.setContentsMargins(10, 10, 10, 10)
+        # Original main layout (now for content)
+        self.content_layout_hbox = QHBoxLayout(self.content_widget)
+        self.content_layout_hbox.setContentsMargins(10, 10, 10, 10)
     
         self.left_layout_layout = QVBoxLayout()
         self.left_layout_layout.setContentsMargins(10, 10, 10, 10)
@@ -228,12 +263,19 @@ class Home(QMainWindow):
         self.projects_list = ProjectsListWidget()
         self.content_layout.addWidget(self.projects_list)
         
-        # Add widgets to main layout
-        self.main_layout.addWidget(self.left_layout)
-        self.main_layout.addWidget(self.content, 1)
+        # Add widgets to content layout
+        self.content_layout_hbox.addWidget(self.left_layout)
+        self.content_layout_hbox.addWidget(self.content, 1)
         
         # Load recent projects
         self.load_recent_projects()
+
+    # MODIFIED: Add changeEvent to update maximize icon when window state changes
+    def changeEvent(self, event):
+        """Override changeEvent to detect window state changes (e.g., maximize)."""
+        if event.type() == QEvent.WindowStateChange:
+            self.title_bar.update_maximize_icon()
+        super().changeEvent(event)
 
     # Add this function to calculate relative time
     def get_relative_time(self, timestamp_str):
@@ -376,14 +418,9 @@ if __name__ == "__main__":
         # A valid project path was provided.
         # Call the launch function, which will show the loading dialog.
         window.launch_main_app(project_to_open)
-        # IMPORTANT: We do NOT show the 'Home' window. The loading dialog is shown
-        # by launch_main_app, and the MainWindow will be shown when loading is complete.
     else:
         # No valid project was provided via command line.
         # Show the normal 'Home' window with the recent projects list.
         window.show()
 
-    # CRITICAL: Start the event loop. This keeps the application alive,
-    # allowing the ProjectLoaderThread to run and its signals to be processed.
-    # This is what was missing from the previous attempt.
     sys.exit(app.exec_())
