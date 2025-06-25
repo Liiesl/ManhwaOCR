@@ -8,6 +8,7 @@ from PyQt5.QtGui import (QColor, QFontDatabase)
 import qtawesome as qta
 from app.images.preset import PresetButton
 from assets.styles import TEXT_BOX_STYLE_PANEL_STYLESHEET, DEFAULT_GRADIENT
+from BetterColorDialog import CustomColorDialog
 
 def get_style_diff(style_dict, base_style_dict):
     """Compares a style dict to a base and returns only the changed values."""
@@ -710,11 +711,17 @@ class TextBoxStylePanel(QWidget):
         button.setStyleSheet(f"background-color: {color.name(QColor.HexArgb)}; border: 1px solid #60666E; border-radius: 3px;")
 
     def choose_color(self, button):
+        """Opens the custom color dialog to choose a color for the button."""
         current_color = self._get_color_from_button(button)
-        color = QColorDialog.getColor(initial=current_color, options=QColorDialog.ShowAlphaChannel)
-        if color.isValid():
+        # Use the custom color dialog instead of QColorDialog
+        # Pass the current button color as initial_color and self as parent
+        color = CustomColorDialog.getColor(initial_color=current_color, parent=self)
+
+        # The rest of the logic remains the same:
+        # Check if a valid color was returned (CustomColorDialog.getColor returns the selected color on accept)
+        if color is not None and color.isValid():
             self.set_button_color(button, color)
-            self.style_changed_handler()
+            self.style_changed_handler() # Emit signal that style might have changed
 
     def _get_color_from_button(self, button):
         style = button.styleSheet()
