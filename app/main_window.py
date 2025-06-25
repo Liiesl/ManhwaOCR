@@ -5,10 +5,10 @@ from PyQt5.QtGui import QPixmap, QKeySequence, QColor
 import qtawesome as qta
 from core.ocr_processor import OCRProcessor
 from utils.file_io import export_ocr_results, import_translation_file, export_rendered_images
-from app.image_area import ResizableImageLabel
+from app.images.image_area import ResizableImageLabel
 from app.ui_widget import CustomProgressBar, MenuBar, CustomScrollArea
 from app.results_widget import ResultsWidget
-from app.custom_bubble import TextBoxStylePanel
+from app.images.custom_bubble import TextBoxStylePanel
 from app.find_replace import FindReplaceWidget
 from utils.settings import SettingsDialog
 from core.translations import TranslationThread, generate_for_translate_content, import_translation_file_content
