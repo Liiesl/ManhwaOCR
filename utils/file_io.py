@@ -3,7 +3,7 @@ import ast
 import json
 from PyQt5.QtWidgets import QMessageBox, QFileDialog
 from PyQt5.QtCore import QRectF
-from app.image_area import ResizableImageLabel
+from app.images.image_area import ResizableImageLabel
 import zipfile
 
 def export_translated_images_to_zip(image_paths_with_names):
