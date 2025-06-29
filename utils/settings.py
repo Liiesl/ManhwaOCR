@@ -130,7 +130,7 @@ class SettingsDialog(QDialog):
             ("gemini-2.5-flash-preview-04-17", "500 req/day (free tier)"),
             ("gemini-2.5-pro", "No free tier"),
             ("gemini-2.5-pro-preview-05-06", "No free tier"),
-            {"gemini-2.5-flash-lite-preview-06-17", "500 req/day (free tier)"},
+            ("gemini-2.5-flash-lite-preview-06-17", "500 req/day (free tier)"), # CORRECTED
             ("gemini-2.0-flash", "1500 req/day (free tier)"),
             ("gemini-2.0-flash-lite", "1500 req/day (free tier)"),
             ("gemma-3n-e4b-it", "14400 req/day")

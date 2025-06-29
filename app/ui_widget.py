@@ -1,13 +1,15 @@
-from PyQt5.QtWidgets import QProgressBar, QMenuBar, QAction, QDialog, QMessageBox, QFileDialog, QTextEdit, QStyledItemDelegate, QScrollArea
-from PyQt5.QtCore import QTimer, QDateTime, Qt
+from PyQt5.QtWidgets import (QProgressBar, QMenuBar, QAction, QDialog, QMessageBox, QFileDialog, QTextEdit, 
+                             QStyledItemDelegate, QScrollArea, QWidget, QHBoxLayout, QPushButton)
+from PyQt5.QtCore import QTimer, QDateTime, Qt, pyqtSignal
 import qtawesome as qta
+from enum import Enum, auto
+from assets.styles import IV_BUTTON_STYLES
 
 class MenuBar(QMenuBar):
     def __init__(self, parent):
         super().__init__(parent)
         self.main_window = parent  # Reference to main window
         self.setStyleSheet("""
-         
             QMenuBar {
                 background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #2D2D2D, stop:1 #1E1E1E);
                 padding: 5px;
@@ -235,29 +237,81 @@ class TextEditDelegate(QStyledItemDelegate):
         return size
     
 class CustomScrollArea(QScrollArea):
-    def __init__(self, overlay_widget, parent=None):
+    """
+    A custom QScrollArea that features a self-contained, floating overlay with
+    buttons for scrolling and saving.
+    """
+    # This signal is emitted when the "Save" button in the overlay is clicked.
+    # It passes the button widget itself, which the main window uses to
+    # position the save menu correctly.
+    save_requested = pyqtSignal(QWidget)
+
+    def __init__(self, parent=None):
         super().__init__(parent)
-        self.overlay_widget = overlay_widget
+        self.overlay_widget = None
+        self._init_overlay()
+
+    def _init_overlay(self):
+        """
+        Creates and configures the overlay widget and its buttons. This logic
+        is now entirely encapsulated within the CustomScrollArea class.
+        """
+        self.overlay_widget = QWidget(self)
+        self.overlay_widget.setObjectName("ScrollButtonOverlay")
+        self.overlay_widget.setStyleSheet("#ScrollButtonOverlay { background-color: transparent; }")
+
+        layout = QHBoxLayout(self.overlay_widget)
+        layout.setContentsMargins(10, 10, 10, 10)
+        layout.setSpacing(1)
+
+        # Scroll to Top Button
+        btn_scroll_top = QPushButton(qta.icon('fa5s.arrow-up', color='white'), "")
+        btn_scroll_top.setFixedSize(50, 50)
+        btn_scroll_top.clicked.connect(lambda: self.verticalScrollBar().setValue(0))
+        btn_scroll_top.setStyleSheet(IV_BUTTON_STYLES)
+        layout.addWidget(btn_scroll_top)
+
+        # Save Menu Button
+        btn_save_menu = QPushButton(qta.icon('fa5s.save', color='white'), "Save")
+        btn_save_menu.setFixedSize(120, 50)
+        # Connect the click to emit our custom signal, passing the button instance
+        btn_save_menu.clicked.connect(lambda: self.save_requested.emit(btn_save_menu))
+        btn_save_menu.setStyleSheet(IV_BUTTON_STYLES)
+        layout.addWidget(btn_save_menu)
+
+        # Scroll to Bottom Button
+        btn_scroll_bottom = QPushButton(qta.icon('fa5s.arrow-down', color='white'), "")
+        btn_scroll_bottom.setFixedSize(50, 50)
+        btn_scroll_bottom.clicked.connect(lambda: self.verticalScrollBar().setValue(self.verticalScrollBar().maximum()))
+        btn_scroll_bottom.setStyleSheet(IV_BUTTON_STYLES)
+        layout.addWidget(btn_scroll_bottom)
 
     def resizeEvent(self, event):
+        """
+        When the scroll area is resized, reposition the overlay to keep it
+        at the bottom-center of the viewport.
+        """
         super().resizeEvent(event)
         self.update_overlay_position()
 
     def update_overlay_position(self):
+        """
+        Calculates the correct position for the overlay widget within the
+        scroll area's viewport and moves it there.
+        """
         if self.overlay_widget:
-            overlay_width = 300 # Consider making these dynamic or constants
+            # Using original hardcoded values for visual consistency
+            overlay_width = 300
             overlay_height = 60
-            # Use viewport size for positioning relative to visible area
+            
+            # Use viewport size for positioning relative to the visible area
             viewport_width = self.viewport().width()
             viewport_height = self.viewport().height()
 
-            # Position relative to viewport, adjust for scrollbar width if necessary
-            scrollbar_width = self.verticalScrollBar().width() if self.verticalScrollBar().isVisible() else 0
+            # Center horizontally in the viewport
             x = (viewport_width - overlay_width) // 2
-            y = viewport_height - overlay_height - 10 # 10 pixels from bottom of viewport
+            # Place near the bottom of the viewport
+            y = viewport_height - overlay_height - 10 
 
-            # Map viewport coordinates to widget coordinates if overlay is child of self
-            # If overlay is child of viewport(), positioning is simpler
-            # Assuming overlay_widget is child of self (the QScrollArea)
             self.overlay_widget.setGeometry(x, y, overlay_width, overlay_height)
-            self.overlay_widget.raise_() # Ensure it stays on top
+            self.overlay_widget.raise_()

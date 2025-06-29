@@ -1,8 +1,9 @@
+# --- START OF FILE results_widget.py ---
+
 from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QFrame, QScrollArea, QStackedWidget,
                              QCheckBox, QPushButton, QTableWidget, QTableWidgetItem, QMessageBox, QHeaderView,
-                             QTextEdit)
-from PyQt5.QtCore import Qt, QEvent
-from PyQt5.QtGui import QFontMetrics
+                             QTextEdit, QAbstractItemView)
+from PyQt5.QtCore import Qt, pyqtSignal, QEvent
 import qtawesome as qta
 import math
 
@@ -10,6 +11,7 @@ from app.ui_widget import TextEditDelegate
 from assets.styles import (ADVANCED_CHECK_STYLES, SIMPLE_VIEW_STYLES, DELETE_ROW_STYLES)
 
 class ResultsWidget(QWidget):
+    rowSelected = pyqtSignal(object)  # Signal to emit the row_number when selected
     def __init__(self, main_window, combine_action, find_action):
         super().__init__()
         self.main_window = main_window
@@ -31,6 +33,7 @@ class ResultsWidget(QWidget):
         self.results_table = QTableWidget()
         self.results_table.setColumnCount(6)
         self.results_table.setHorizontalHeaderLabels(["Text", "Confidence", "Coordinates", "File", "Row Number", ""])
+        self.results_table.currentCellChanged.connect(self.on_table_item_selected)
 
         # --- Column resizing and word wrap changes ---
         # Disable word wrap to allow the focused column to expand on a single line.
@@ -72,6 +75,24 @@ class ResultsWidget(QWidget):
 
         main_layout.addWidget(self.right_content_stack, 1)
 
+    def eventFilter(self, source, event):
+        # --- MODIFICATION: Filter for FocusIn on a QTextEdit ---
+        if event.type() == QEvent.FocusIn and isinstance(source, QTextEdit):
+            row_number = source.property("ocr_row_number")
+            if row_number is not None:
+                self.rowSelected.emit(row_number)
+            # We don't consume the event, just react to it
+            return False
+        return super().eventFilter(source, event)
+
+    def on_table_item_selected(self, currentRow, currentColumn, previousRow, previousColumn):
+        # Slot for the advanced view (table) selection
+        item = self.results_table.item(currentRow, 0) # Always get data from first column
+        if item:
+            row_number = item.data(Qt.UserRole)
+            if row_number is not None:
+                self.rowSelected.emit(row_number)
+
     def update_views(self):
         """Public method called by MainWindow to refresh the currently visible view."""
         if self.main_window.advanced_mode_check.isChecked():
@@ -88,17 +109,26 @@ class ResultsWidget(QWidget):
             container = QWidget()
             container.setProperty("ocr_row_number", original_row_number)
             container.setObjectName(f"SimpleViewRowContainer_{original_row_number}")
+
             container_layout = QHBoxLayout(container)
             container_layout.setContentsMargins(5, 5, 5, 5); container_layout.setSpacing(10)
             text_frame = QFrame(); text_frame.setStyleSheet(SIMPLE_VIEW_STYLES)
+
             text_layout = QVBoxLayout(text_frame); text_layout.setContentsMargins(0, 0, 0, 0)
-            text_edit = QTextEdit(result['text']); text_edit.setStyleSheet(SIMPLE_VIEW_STYLES)
+            # --- MODIFIED: Use get_display_text to fetch text from the active profile ---
+            display_text = self.main_window.get_display_text(result)
+            text_edit = QTextEdit(display_text)
+            text_edit.setStyleSheet(SIMPLE_VIEW_STYLES)
+            text_edit.setProperty("ocr_row_number", original_row_number)
+            text_edit.installEventFilter(self)
             text_edit.setLineWrapMode(QTextEdit.WidgetWidth)
             text_edit.textChanged.connect(lambda rn=original_row_number, te=text_edit: self.on_simple_text_changed(rn, te.toPlainText()))
             text_layout.addWidget(text_edit)
+            
             delete_btn = QPushButton(qta.icon('fa5s.trash-alt', color='red'), "")
             delete_btn.setFixedSize(40, 40); delete_btn.setStyleSheet(DELETE_ROW_STYLES)
             delete_btn.clicked.connect(lambda _, rn=original_row_number: self.main_window.delete_row(rn))
+            
             container_layout.addWidget(text_frame, 1); container_layout.addWidget(delete_btn)
             self.simple_scroll_layout.addWidget(container)
 
@@ -106,21 +136,18 @@ class ResultsWidget(QWidget):
         if self.main_window.find_replace_widget.isVisible(): self.main_window.find_replace_widget.find_text()
 
     def on_simple_text_changed(self, original_row_number, text):
-        # This method now acts as a controller, calling MainWindow to update the data
-        # and then updating sibling views if necessary.
-        target_result, _ = self.main_window._find_result_by_row_number(original_row_number)
-        if target_result:
-            if target_result.get('is_deleted', False): return
-            if target_result['text'] != text:
-                 self.main_window.update_ocr_text(original_row_number, text)
-                 self._update_table_cell_if_visible(original_row_number, 0, text)
-                 if self.main_window.find_replace_widget.isVisible() and self.main_window.find_replace_widget.find_input.text():
-                     self.main_window.find_replace_widget.find_text()
+        self.main_window.update_ocr_text(original_row_number, text)
+        self._update_table_cell_if_visible(original_row_number, 0, text)
 
     def update_results_table(self):
         self.results_table.blockSignals(True)
         visible_results = [res for res in self.main_window.ocr_results if not res.get('is_deleted', False)]
         self.results_table.setRowCount(len(visible_results))
+
+        # --- NEW: Update header to show active profile ---
+        active_profile = self.main_window.active_profile_name
+        header_text = f"Text ({active_profile})" if active_profile != "Original" else "Text (Original OCR)"
+        self.results_table.setHorizontalHeaderLabels([header_text, "Confidence", "Coordinates", "File", "Row Number", ""])
 
         for visible_row_index, result in enumerate(visible_results):
             original_row_number = result['row_number']
@@ -129,7 +156,9 @@ class ResultsWidget(QWidget):
                  display_row_number = f"{int(rn_float)}" if rn_float.is_integer() else f"{rn_float:.1f}"
             except (ValueError, TypeError): display_row_number = str(original_row_number)
 
-            text_item = QTableWidgetItem(result['text'])
+            # --- MODIFIED: Use get_display_text to fetch text from the active profile ---
+            display_text = self.main_window.get_display_text(result)
+            text_item = QTableWidgetItem(display_text)
             text_item.setTextAlignment(Qt.AlignTop | Qt.AlignLeft)
             text_item.setFlags(text_item.flags() | Qt.ItemIsEditable)
             text_item.setData(Qt.UserRole, original_row_number)
@@ -171,6 +200,7 @@ class ResultsWidget(QWidget):
             self.results_table.setCellWidget(visible_row_index, 5, container)
 
         self.results_table.blockSignals(False)
+        self.update_column_resize_modes() # Re-apply column sizing after header change
 
     def on_table_focus_changed(self, currentRow, currentColumn, previousRow, previousColumn):
         """
@@ -216,40 +246,82 @@ class ResultsWidget(QWidget):
         original_row_number = item.data(Qt.UserRole)
         if original_row_number is None: return
 
-        target_result, _ = self.main_window._find_result_by_row_number(original_row_number)
-        if not target_result or target_result.get('is_deleted', False): return
-
         if column == 0:
              new_text = item.text()
-             if target_result['text'] != new_text:
-                 self.main_window.update_ocr_text(original_row_number, new_text)
-                 self._update_simple_view_text_if_visible(original_row_number, new_text)
-                 if self.main_window.find_replace_widget.isVisible() and self.main_window.find_replace_widget.find_input.text():
-                    self.main_window.find_replace_widget.find_text()
+             self.main_window.update_ocr_text(original_row_number, new_text)
+             self._update_simple_view_text_if_visible(original_row_number, new_text)
+
+    def scroll_to_row(self, row_number):
+        """Scrolls the active view to make the specified row_number visible at the top."""
+        found = False
+        try:
+            target_rn_float = float(row_number)
+        except (ValueError, TypeError):
+            print(f"Warning: Could not convert row_number '{row_number}' to float for scrolling.")
+            return False
+
+        if self.main_window.advanced_mode_check.isChecked():
+            # Scroll the table view
+            for row in range(self.results_table.rowCount()):
+                item = self.results_table.item(row, 0)
+                if item and item.data(Qt.UserRole) is not None:
+                    try:
+                        if math.isclose(float(item.data(Qt.UserRole)), target_rn_float):
+                            # --- MODIFICATION: Change to PositionAtTop ---
+                            self.results_table.scrollToItem(item, QAbstractItemView.PositionAtTop)
+                            found = True
+                            break
+                    except (ValueError, TypeError):
+                        continue
+        else:
+            # Scroll the simple view
+            for i in range(self.simple_scroll_layout.count()):
+                widget = self.simple_scroll_layout.itemAt(i).widget()
+                if widget and widget.property("ocr_row_number") is not None:
+                    try:
+                        if math.isclose(float(widget.property("ocr_row_number")), target_rn_float):
+                            # --- MODIFICATION: Set scrollbar value directly to position the widget at the top ---
+                            self.simple_scroll.verticalScrollBar().setValue(widget.y())
+                            found = True
+                            break
+                    except (ValueError, TypeError):
+                        continue
+        
+        if not found:
+            print(f"Info: Could not find row {row_number} in the current results view to scroll to.")
+        
+        return found
 
     def _update_table_cell_if_visible(self, original_row_number, column, new_value):
-        if not self.main_window.advanced_mode_check.isChecked(): return
-
+        # The `if...return` guard was incorrect and prevented syncing, so it has been removed.
+        # This function is now responsible for updating the table's data representation.
         for row in range(self.results_table.rowCount()):
             item = self.results_table.item(row, column)
             if item and item.data(Qt.UserRole) == original_row_number:
+                # Add a check to prevent setting the same text. This is the key fix to
+                # break the infinite signal loop.
+                if item.text() == str(new_value):
+                    break
+
                 self.results_table.blockSignals(True)
                 item.setText(str(new_value))
                 self.results_table.blockSignals(False)
                 break
 
     def _update_simple_view_text_if_visible(self, original_row_number, new_text):
-        if self.main_window.advanced_mode_check.isChecked(): return
-
+        # The `if...return` guard was incorrect and prevented syncing, so it has been removed.
+        # This function is now responsible for updating the simple view's data representation.
         for i in range(self.simple_scroll_layout.count()):
              widget = self.simple_scroll_layout.itemAt(i).widget()
              if isinstance(widget, QWidget) and widget.property("ocr_row_number") == original_row_number:
                  text_edit = widget.findChild(QTextEdit)
                  if text_edit:
-                     text_edit.blockSignals(True)
+                     # This function already had the crucial check to see if the text was different
+                     # before setting it, which correctly prevents signal loops. No changes needed here.
                      if text_edit.toPlainText() != new_text:
+                         text_edit.blockSignals(True)
                          text_edit.setText(new_text)
-                     text_edit.blockSignals(False)
+                         text_edit.blockSignals(False)
                  break
 
     def combine_selected_rows(self):
@@ -289,7 +361,8 @@ class ResultsWidget(QWidget):
         if not is_adjacent: QMessageBox.warning(self, "Warning", "Selected standard rows must be a contiguous sequence."); return
 
         selected_results.sort(key=lambda x: float(x.get('row_number', float('inf'))))
-        combined_text_list = [res['text'] for res in selected_results]
+        # --- MODIFIED: Combine the currently displayed text, not the original OCR text ---
+        combined_text_list = [self.main_window.get_display_text(res) for res in selected_results]
         min_confidence = min(res.get('confidence', 0.0) for res in selected_results)
         first_result = selected_results[0]
         rows_to_delete = [res['row_number'] for res in selected_results[1:]]

@@ -1,21 +1,18 @@
 from PyQt5.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QSizePolicy,
-                             QCheckBox, QPushButton,  QMessageBox, QSplitter, QAction, QLabel)
-from PyQt5.QtCore import Qt, QSettings
+                             QCheckBox, QPushButton,  QMessageBox, QSplitter, QAction, 
+                             QLabel, QComboBox)
+from PyQt5.QtCore import Qt, QSettings, QPoint
 from PyQt5.QtGui import QPixmap, QKeySequence, QColor
 import qtawesome as qta
-from core.ocr_processor import OCRProcessor
 from utils.file_io import export_ocr_results, import_translation_file, export_rendered_images
-from app.images.image_area import ResizableImageLabel
-from app.ui_widget import CustomProgressBar, MenuBar, CustomScrollArea
-from app.results_widget import ResultsWidget
-from app.images.custom_bubble import TextBoxStylePanel
-from app.find_replace import FindReplaceWidget
+from app import (ResizableImageLabel, CustomProgressBar, MenuBar, CustomScrollArea, ResultsWidget, TextBoxStylePanel, 
+                 FindReplaceWidget, ImportExportMenu, SaveMenu, BatchOCRHandler, ProjectLoader, ManualOCRHandler )
 from utils.settings import SettingsDialog
-from core.translations import TranslationThread, generate_for_translate_content, import_translation_file_content
+from core.translations import TranslationWindow, import_translation_file_content
 from assets.styles import (COLORS, MAIN_STYLESHEET, IV_BUTTON_STYLES, ADVANCED_CHECK_STYLES, RIGHT_WIDGET_STYLES,
                             DEFAULT_TEXT_STYLE, DELETE_ROW_STYLES, get_style_diff)
+from assets.styles2 import MANUALOCR_STYLES
 import easyocr, os, gc, json, zipfile, math, sys, traceback
-from app.manual_ocr_handler import ManualOCRHandler
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -24,6 +21,10 @@ class MainWindow(QMainWindow):
         self.setGeometry(100, 100, 1200, 600)
         self.settings = QSettings("YourCompany", "MangaOCRTool")
         self._load_filter_settings()
+        
+        # --- NEW: Profile Management ---
+        self.active_profile_name = "Original"
+        self.profiles = {"Original": {}} # This will store available profiles
 
         # Actions are created here
         self.combine_action = QAction("Combine Rows", self)
@@ -45,12 +46,12 @@ class MainWindow(QMainWindow):
         # --- REMOVED Manual OCR state variables ---
         self.next_global_row_number = 0
 
+        self._is_handling_selection = False # Flag to prevent signal loops
+
         self.init_ui()
         # Connect actions that depend on widgets created in init_ui
         self.combine_action.triggered.connect(self.results_widget.combine_selected_rows)
 
-        # --- NEW: Instantiate Manual OCR Handler ---
-        # Done after init_ui so all UI elements exist
         self.manual_ocr_handler = ManualOCRHandler(self)
 
         self.current_image = None
@@ -77,6 +78,7 @@ class MainWindow(QMainWindow):
         self.selected_text_box_item = None
         if hasattr(self, 'style_panel'):
              self.style_panel.style_changed.connect(self.update_text_box_style)
+        self.batch_handler = None # Initialize batch handler to None
 
     def _load_filter_settings(self):
         self.min_text_height = int(self.settings.value("min_text_height", 40))
@@ -92,29 +94,33 @@ class MainWindow(QMainWindow):
         main_layout = QHBoxLayout()
         self.colors = COLORS
         self.setStyleSheet(MAIN_STYLESHEET)
+        # --- NEW: Call to initialize profile selector UI ---
+        self.update_profile_selector()
 
         # Left Panel
         left_panel = QVBoxLayout()
         left_panel.setSpacing(20)
 
+        # --- MODIFIED: Settings and Progress Bar Layout ---
         settings_layout = QHBoxLayout()
         self.btn_settings = QPushButton(qta.icon('fa5s.cog', color='white'), "")
         self.btn_settings.setFixedSize(50, 50)
         self.btn_settings.clicked.connect(self.show_settings_dialog)
         settings_layout.addWidget(self.btn_settings)
 
-        self.btn_save = QPushButton(qta.icon('fa5s.save', color='white'), "Save Project")
-        self.btn_save.clicked.connect(self.save_project)
-        settings_layout.addWidget(self.btn_save)
-        left_panel.addLayout(settings_layout)
-
-        progress_layout = QVBoxLayout()
+        # MOVED: Progress bar is now here, replacing the old save button
         self.ocr_progress = CustomProgressBar()
         self.ocr_progress.setFixedHeight(20)
-        progress_layout.addWidget(self.ocr_progress)
-        left_panel.addLayout(progress_layout)
+        settings_layout.addWidget(self.ocr_progress, 1) # Add stretch factor to fill space
 
-        self.scroll_area = CustomScrollArea(None)
+        left_panel.addLayout(settings_layout)
+
+        # REMOVED: Old progress layout and save button
+
+        # --- MODIFIED: CustomScrollArea is now self-contained ---
+        self.scroll_area = CustomScrollArea(self)
+        self.scroll_area.save_requested.connect(self.show_save_menu)
+
         self.scroll_content = QWidget()
         self.scroll_content.setStyleSheet("background-color: transparent;")
         self.scroll_content.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
@@ -125,34 +131,8 @@ class MainWindow(QMainWindow):
         self.scroll_area.setWidgetResizable(True)
         left_panel.addWidget(self.scroll_area)
 
-        scroll_button_overlay = QWidget(self.scroll_area)
-        scroll_button_overlay.setObjectName("ScrollButtonOverlay")
-        scroll_button_overlay.setStyleSheet("#ScrollButtonOverlay { background-color: transparent; }")
-        scroll_button_layout = QHBoxLayout(scroll_button_overlay)
-        scroll_button_layout.setContentsMargins(10, 10, 10, 10)
-        scroll_button_layout.setSpacing(1)
-
-        self.btn_scroll_top = QPushButton(qta.icon('fa5s.arrow-up', color='white'), "")
-        self.btn_scroll_top.setFixedSize(50, 50)
-        self.btn_scroll_top.clicked.connect(lambda: self.scroll_area.verticalScrollBar().setValue(0))
-        self.btn_scroll_top.setStyleSheet(IV_BUTTON_STYLES)
-        scroll_button_layout.addWidget(self.btn_scroll_top)
-
-        self.btn_export_manhwa = QPushButton(qta.icon('fa5s.file-archive', color='white'), "Save")
-        self.btn_export_manhwa.setFixedSize(120, 50)
-        self.btn_export_manhwa.clicked.connect(self.export_manhwa)
-        self.btn_export_manhwa.setStyleSheet(IV_BUTTON_STYLES)
-        scroll_button_layout.addWidget(self.btn_export_manhwa)
-
-        self.btn_scroll_bottom = QPushButton(qta.icon('fa5s.arrow-down', color='white'), "")
-        self.btn_scroll_bottom.setFixedSize(50, 50)
-        self.btn_scroll_bottom.clicked.connect(lambda: self.scroll_area.verticalScrollBar().setValue(self.scroll_area.verticalScrollBar().maximum()))
-        self.btn_scroll_bottom.setStyleSheet(IV_BUTTON_STYLES)
-        scroll_button_layout.addWidget(self.btn_scroll_bottom)
-
-        self.scroll_area.overlay_widget = scroll_button_overlay
-        self.scroll_area.update_overlay_position()
-        scroll_button_overlay.raise_()
+        # --- REMOVED: All logic for creating the scroll area overlay and buttons ---
+        # This is now handled inside the CustomScrollArea class.
 
         # Right Panel
         right_panel = QVBoxLayout()
@@ -180,14 +160,18 @@ class MainWindow(QMainWindow):
         file_button_layout = QHBoxLayout()
         file_button_layout.setAlignment(Qt.AlignRight)
         file_button_layout.setSpacing(20)
-        self.btn_import_translation = QPushButton(qta.icon('fa5s.file-import', color='white'), "Import Translation")
-        self.btn_import_translation.setFixedWidth(250)
-        self.btn_import_translation.clicked.connect(self.import_translation)
-        file_button_layout.addWidget(self.btn_import_translation)
-        self.btn_export_ocr = QPushButton(qta.icon('fa5s.file-export', color='white'), "Export OCR")
-        self.btn_export_ocr.setFixedWidth(250)
-        self.btn_export_ocr.clicked.connect(self.export_ocr)
-        file_button_layout.addWidget(self.btn_export_ocr)
+        # --- NEW: Profile Selector Dropdown ---
+        self.profile_selector = QComboBox(self)
+        self.profile_selector.setFixedWidth(220)
+        self.profile_selector.setToolTip("Switch between different text profiles (e.g., Original, User Edits, Translations).")
+        self.profile_selector.activated[str].connect(self.switch_active_profile)
+        file_button_layout.addWidget(self.profile_selector)
+        # --- NEW: Import/Export Menu Button ---
+        self.btn_import_export_menu = QPushButton(qta.icon('fa5s.bars', color='white'), "")
+        self.btn_import_export_menu.setFixedWidth(60)
+        self.btn_import_export_menu.setToolTip("Open Import/Export Menu")
+        self.btn_import_export_menu.clicked.connect(self.show_import_export_menu)
+        file_button_layout.addWidget(self.btn_import_export_menu)
         button_layout.addLayout(file_button_layout)
         right_panel.addLayout(button_layout)
 
@@ -198,16 +182,7 @@ class MainWindow(QMainWindow):
         # --- Manual OCR Overlay (UI Definition remains here, logic is in handler) ---
         self.manual_ocr_overlay = QWidget(self)
         self.manual_ocr_overlay.setObjectName("ManualOCROverlay")
-        self.manual_ocr_overlay.setStyleSheet("""
-            #ManualOCROverlay { background-color: rgba(0, 0, 0, 0.7); border-radius: 5px; }
-            QPushButton { background-color: #4CAF50; border: none; color: white; padding: 5px 10px; text-align: center; font-size: 14px; margin: 2px; border-radius: 3px; }
-            QPushButton:hover { background-color: #45a049; }
-            QPushButton#CancelButton { background-color: #f44336; }
-            QPushButton#CancelButton:hover { background-color: #da190b; }
-            QPushButton#ResetButton { background-color: #ff9800; }
-            QPushButton#ResetButton:hover { background-color: #e68a00; }
-            QLabel { color: white; font-size: 12px; }
-        """)
+        self.manual_ocr_overlay.setStyleSheet(MANUALOCR_STYLES)
         overlay_layout = QVBoxLayout(self.manual_ocr_overlay)
         overlay_layout.setContentsMargins(5, 5, 5, 5)
         overlay_layout.addWidget(QLabel("Selected Area:"))
@@ -230,6 +205,7 @@ class MainWindow(QMainWindow):
         self.right_content_splitter.addWidget(self.style_panel)
 
         self.results_widget = ResultsWidget(self, self.combine_action, self.find_action)
+        self.results_widget.rowSelected.connect(self.on_result_row_selected)
         self.right_content_splitter.addWidget(self.results_widget)
         self.right_content_splitter.setStretchFactor(0, 0)
         self.right_content_splitter.setStretchFactor(1, 1)
@@ -237,7 +213,7 @@ class MainWindow(QMainWindow):
         self.style_panel_size = None
 
         bottom_controls_layout = QHBoxLayout()
-        self.btn_translate = QPushButton(qta.icon('fa5s.language', color='white'), "Translate")
+        self.btn_translate = QPushButton(qta.icon('fa5s.language', color='white'), "AI Translation")
         self.btn_translate.clicked.connect(self.start_translation)
         bottom_controls_layout.addWidget(self.btn_translate)
 
@@ -268,6 +244,64 @@ class MainWindow(QMainWindow):
         main_widget.setLayout(main_layout)
         self.setCentralWidget(main_widget)
 
+    def show_import_export_menu(self):
+        """Creates and shows the ImportExportMenu popup."""
+        menu = ImportExportMenu(self)
+        menu.import_requested.connect(self.import_translation)
+        menu.export_requested.connect(self.export_ocr)
+
+        # Position the menu. We want to align its top-right corner
+        # with the bottom-right corner of the button that triggered it.
+        button = self.sender()
+        button_pos = button.mapToGlobal(button.rect().bottomRight())
+        
+        # Move the menu's top-left corner to (button_x - menu_width, button_y)
+        menu_pos = QPoint(button_pos.x() - menu.width(), button_pos.y())
+        menu.move(menu_pos)
+        
+        menu.show()
+
+    def show_save_menu(self, button):
+        """Creates and shows the SaveMenu popup, positioned relative to the provided button."""
+        menu = SaveMenu(self)
+        menu.save_project_requested.connect(self.save_project)
+        menu.save_images_requested.connect(self.export_manhwa)
+
+        # Position the menu. We want to align its top-right corner
+        # with the bottom-right corner of the button that triggered it.
+        button_pos = button.mapToGlobal(button.rect().bottomRight())
+        
+        # Move the menu's top-left corner to (button_x - menu_width, button_y)
+        menu_pos = QPoint(button_pos.x() - menu.width(), button_pos.y())
+        menu.move(menu_pos)
+        
+        menu.show()
+
+    def update_profile_selector(self):
+        """Syncs the profile dropdown with the self.profiles dictionary."""
+        if not hasattr(self, 'profile_selector'): return # Return if UI not yet initialized
+        self.profile_selector.blockSignals(True)
+        self.profile_selector.clear()
+
+        # Ensure "Original" is always present and first.
+        profiles_list = sorted([p for p in self.profiles.keys() if p != "Original"])
+        profiles_list.insert(0, "Original")
+
+        self.profile_selector.addItems(profiles_list)
+
+        if self.active_profile_name in self.profiles:
+            index = self.profile_selector.findText(self.active_profile_name)
+            if index != -1: self.profile_selector.setCurrentIndex(index)
+
+        self.profile_selector.blockSignals(False)
+
+    def switch_active_profile(self, profile_name):
+        """Handles the user selecting a new profile from the dropdown."""
+        if profile_name and profile_name in self.profiles and profile_name != self.active_profile_name:
+            print(f"Switching to active profile: {profile_name}")
+            self.active_profile_name = profile_name
+            self.update_all_views()
+
     def show_settings_dialog(self):
         dialog = SettingsDialog(self)
         if dialog.exec_():
@@ -287,106 +321,144 @@ class MainWindow(QMainWindow):
         print(f"Find shortcut set to: {shortcut}")
 
     def process_mmtl(self, mmtl_path, temp_dir):
-        self.mmtl_path = mmtl_path
-        project_name = os.path.splitext(os.path.basename(mmtl_path))[0]
-        self.setWindowTitle(f"{project_name} | ManhwaOCR")
-        self.temp_dir = temp_dir
-        self.image_paths = sorted([
-            os.path.join(temp_dir, 'images', f)
-            for f in os.listdir(os.path.join(temp_dir, 'images'))
-            if f.lower().endswith(('png', 'jpg', 'jpeg'))
-        ])
-        self.ocr_results = []
-        self.next_global_row_number = 0
-        master_path = os.path.join(temp_dir, 'master.json')
-        if os.path.exists(master_path):
-            try:
-                # --- FIX: Added encoding='utf-8' to handle non-ASCII characters ---
-                with open(master_path, 'r', encoding='utf-8') as f:
-                    loaded_results = json.load(f)
-                    max_row_num = -1
-                    valid_results_loaded = []
-                    for res in loaded_results:
-                        if 'row_number' in res and 'filename' in res and 'coordinates' in res and 'text' in res:
-                             try:
-                                 row_num_float = float(res['row_number'])
-                                 if row_num_float.is_integer() and not res.get('is_deleted', False):
-                                     max_row_num = max(max_row_num, int(row_num_float))
-                                 valid_results_loaded.append(res)
-                             except (ValueError, TypeError): continue
-                        else: print(f"Warning: Skipping incomplete result from master.json: {res}")
-                    self.ocr_results = valid_results_loaded
-                    self.next_global_row_number = max_row_num + 1
-                    print(f"Loaded project. Next global row number set to: {self.next_global_row_number}")
-            except json.JSONDecodeError: QMessageBox.critical(self, "Error", "Failed to load OCR data. Corrupted master.json?")
-            except Exception as e: QMessageBox.critical(self, "Error", f"An unexpected error occurred loading master.json: {e}")
-        meta_path = os.path.join(temp_dir, 'meta.json')
-        if os.path.exists(meta_path):
-            try:
-                # --- FIX: Added encoding='utf-8' to handle non-ASCII characters ---
-                with open(meta_path, 'r', encoding='utf-8') as f: 
-                    meta = json.load(f)
-                    self.original_language = meta.get('original_language', 'Korean')
-            except (json.JSONDecodeError, FileNotFoundError) as e:
-                print(f"Warning: Could not load or parse meta.json: {e}. Using default language.")
-        else:
-            self.original_language = 'Korean'
-        if not self.image_paths: QMessageBox.warning(self, "Error", "No images found in selected folder"); return
-        self.btn_process.setEnabled(True)
-        self.btn_manual_ocr.setEnabled(True)
-        self.ocr_progress.setValue(0)
-        # --- MODIFIED: Call manual handler to cancel if active ---
+        """ Processes a .mmtl project by using ProjectLoader and then applying the loaded data to the UI. """
+        # --- 1. Load data using the new loader class ---
+        loader = ProjectLoader()
+        project_data = loader.load_from_directory(mmtl_path, temp_dir)
+
+        # If loading failed, project_data will be None. The loader shows the error.
+        if not project_data:
+            self.close() # Or handle the empty state appropriately
+            return
+
+        # --- 2. Apply the loaded data to the MainWindow's state and UI ---
+        # Reset internal state
+        self._clear_layout(self.scroll_layout)
         if self.manual_ocr_handler.is_active:
             self.manual_ocr_handler.cancel_mode()
-        self._clear_layout(self.scroll_layout)
+
+        # Apply data from the data container object
+        self.mmtl_path = project_data.mmtl_path
+        self.temp_dir = project_data.temp_dir
+        self.image_paths = project_data.image_paths
+        self.ocr_results = project_data.ocr_results
+        self.profiles = {name: {} for name in project_data.profiles} # Convert set to dict format
+        self.original_language = project_data.original_language
+        self.next_global_row_number = project_data.next_global_row_number
+        self.active_profile_name = "Original"
+
+        # Update UI elements
+        self.setWindowTitle(f"{project_data.project_name} | ManhwaOCR")
+        self.btn_process.setEnabled(bool(self.image_paths))
+        self.btn_manual_ocr.setEnabled(bool(self.image_paths))
+        self.ocr_progress.setValue(0)
+        
+        # Populate the image scroll area
+        if not self.image_paths:
+            QMessageBox.warning(self, "No Images", "The project was loaded, but no images were found inside.")
+
         for image_path in self.image_paths:
             try:
                  pixmap = QPixmap(image_path)
-                 if pixmap.isNull():
-                      print(f"Warning: Failed to load image {image_path}")
-                      continue
+                 if pixmap.isNull(): continue
                  filename = os.path.basename(image_path)
                  label = ResizableImageLabel(pixmap, filename)
                  label.textBoxDeleted.connect(self.delete_row)
                  label.textBoxSelected.connect(self.handle_text_box_selected)
-                 # --- NEW: Connect label signal to the handler ---
                  label.manual_area_selected.connect(self.manual_ocr_handler.handle_area_selected)
                  self.scroll_layout.addWidget(label)
             except Exception as e:
                  print(f"Error creating ResizableImageLabel for {image_path}: {e}")
 
+        # --- 3. Trigger final UI updates ---
         self._sort_ocr_results()
+        self.update_profile_selector()
         self.update_all_views()
+        print(f"Project '{project_data.project_name}' loaded successfully.")
+    
+    # --- NEW HELPER FUNCTION ---
+    def get_display_text(self, result):
+        """Gets the text to display based on the active profile."""
+        if self.active_profile_name != "Original":
+            # Check if the result has a translation for the active profile
+            edited_text = result.get('translations', {}).get(self.active_profile_name)
+            if edited_text is not None:
+                return edited_text
+        # Fallback to the original OCR text
+        return result.get('text', '')
 
-    def handle_text_box_selected(self, row_number, image_label, selected):
-        if selected:
-            self.current_selected_row = row_number
-            self.current_selected_image_label = image_label
-            self.selected_text_box_item = None
-            for tb in image_label.get_text_boxes():
-                if tb.row_number == row_number:
-                    self.selected_text_box_item = tb
-                    break
+    def on_result_row_selected(self, row_number):
+        """Handles selection from the ResultsWidget."""
+        if self._is_handling_selection:
+            return  # Prevent recursive loop
 
-            if self.selected_text_box_item:
-                current_style = self.get_style_for_row(row_number)
-                self.style_panel.update_style_panel(current_style)
-                self.style_panel.show()
-            else:
-                print(f"ERROR: Could not find TextBoxItem for row {row_number} in label {image_label.filename}")
-                self.style_panel.clear_and_hide()
+        self._is_handling_selection = True
+        try:
+            target_result, _ = self._find_result_by_row_number(row_number)
+            if not target_result:
+                return
 
+            filename = target_result.get('filename')
+            if not filename:
+                return
+            
+            target_image_label = None
+            # Find the image widget corresponding to the result's filename
             for i in range(self.scroll_layout.count()):
                 widget = self.scroll_layout.itemAt(i).widget()
-                if isinstance(widget, ResizableImageLabel) and widget != image_label:
-                    widget.deselect_all_text_boxes()
+                if isinstance(widget, ResizableImageLabel):
+                    if widget.filename == filename:
+                        target_image_label = widget
+                        # Scroll the image into view, positioning it at the top
+                        self.scroll_area.verticalScrollBar().setValue(widget.y())
+                    else:
+                        # Deselect boxes on all other images
+                        widget.deselect_all_text_boxes()
 
-        else:
-            if row_number == self.current_selected_row and image_label == self.current_selected_image_label:
-                self.current_selected_row = None
-                self.current_selected_image_label = None
+            if target_image_label:
+                # Tell the found image widget to select the correct text box
+                target_image_label.select_text_box(row_number)
+
+        finally:
+            self._is_handling_selection = False
+
+    def handle_text_box_selected(self, row_number, image_label, selected):
+        if self._is_handling_selection:
+            return
+        
+        self._is_handling_selection = True
+        try:
+            if selected:
+                self.current_selected_row = row_number
+                self.current_selected_image_label = image_label
                 self.selected_text_box_item = None
-                self.style_panel.clear_and_hide()
+                for tb in image_label.get_text_boxes():
+                    if tb.row_number == row_number:
+                        self.selected_text_box_item = tb
+                        break
+
+                if self.selected_text_box_item:
+                    current_style = self.get_style_for_row(row_number)
+                    self.style_panel.update_style_panel(current_style)
+                    self.style_panel.show()
+                else:
+                    print(f"ERROR: Could not find TextBoxItem for row {row_number} in label {image_label.filename}")
+                    self.style_panel.clear_and_hide()
+
+                for i in range(self.scroll_layout.count()):
+                    widget = self.scroll_layout.itemAt(i).widget()
+                    if isinstance(widget, ResizableImageLabel) and widget != image_label:
+                        widget.deselect_all_text_boxes()
+                self.results_widget.scroll_to_row(row_number)
+
+            else:
+                if row_number == self.current_selected_row and image_label == self.current_selected_image_label:
+                    self.current_selected_row = None
+                    self.current_selected_image_label = None
+                    self.selected_text_box_item = None
+                    self.style_panel.clear_and_hide()
+        finally:
+            self._is_handling_selection = False
 
     def get_style_for_row(self, row_number):
         style = {}
@@ -421,8 +493,7 @@ class MainWindow(QMainWindow):
         if target_result.get('is_deleted', False):
              print(f"Warning: Attempting to style a deleted row ({row_number}). Ignoring.")
              return
-
-        print(f"Applying style to row {row_number}: {new_style_dict}")
+        
         style_diff = get_style_diff(new_style_dict, DEFAULT_TEXT_STYLE)
 
         if style_diff:
@@ -434,9 +505,6 @@ class MainWindow(QMainWindow):
 
         self.selected_text_box_item.apply_styles(new_style_dict)
 
-    # --- Manual OCR Methods REMOVED (now in ManualOCRHandler) ---
-
-    # --- This method is KEPT as it's shared by standard and manual OCR ---
     def _initialize_ocr_reader(self, context="OCR"):
         """Initializes the EasyOCR reader if it doesn't exist."""
         if self.reader:
@@ -479,7 +547,7 @@ class MainWindow(QMainWindow):
                 widget = item.widget()
                 if widget is not None: widget.deleteLater()
 
-    # --- Renamed from _update_all_views to make its public role clearer ---
+
     def update_all_views(self, affected_filenames=None):
         """Refreshes all views that depend on the ocr_results data."""
         self.results_widget.update_views()
@@ -497,192 +565,194 @@ class MainWindow(QMainWindow):
              traceback.print_exc(file=sys.stdout)
              QMessageBox.warning(self, "Sort Error", f"Could not sort OCR results: {e}")
 
-    # --- Standard OCR Processing ---
+    # --- REWRITTEN: Standard OCR Processing ---
     def start_ocr(self):
         if not self.image_paths:
-            QMessageBox.warning(self, "Warning", "No images loaded to process."); return
-        if self.ocr_processor and self.ocr_processor.isRunning():
-            QMessageBox.warning(self, "Warning", "OCR is already running."); return
-        # --- MODIFIED: Check manual handler's state ---
+            QMessageBox.warning(self, "Warning", "No images loaded to process.")
+            return
+        if self.batch_handler:
+            QMessageBox.warning(self, "Warning", "OCR is already running.")
+            return
         if self.manual_ocr_handler.is_active:
-            QMessageBox.warning(self, "Warning", "Cannot start standard OCR while in Manual OCR mode."); return
+            QMessageBox.warning(self, "Warning", "Cannot start standard OCR while in Manual OCR mode.")
+            return
 
         print("Starting standard OCR process...")
-
         if not self._initialize_ocr_reader("Standard OCR"):
-             return
-
-        self.ocr_progress.start_initial_progress()
-        self.current_image_index = 0
-
-        results_to_keep = [res for res in self.ocr_results if res.get('is_manual', False)]
-        standard_ocr_results_count = len(self.ocr_results) - len(results_to_keep)
-        if standard_ocr_results_count > 0:
-            print(f"Clearing {standard_ocr_results_count} previous standard OCR results.")
-            self.ocr_results = results_to_keep
-
-        self.next_global_row_number = 0
-        if results_to_keep:
-             max_existing_base = -1
-             for res in results_to_keep:
-                  try: max_existing_base = max(max_existing_base, math.floor(float(res.get('row_number', -1))))
-                  except: pass
-             self.next_global_row_number = max_existing_base + 1
-        print(f"Starting standard OCR run. Next global row number set to: {self.next_global_row_number}")
-
-        self.process_next_image()
-
-    def process_next_image(self):
-        """Creates and starts the OCRProcessor for the next image."""
-        if self.current_image_index >= len(self.image_paths):
-            self.finish_ocr_run()
             return
 
-        if not self.reader:
-            QMessageBox.critical(self, "Error", "OCR Reader not available. Cannot process next image.")
-            self.stop_ocr()
-            return
-
+        # --- 1. Prepare for the run ---
         self.btn_process.setVisible(False)
         self.btn_stop_ocr.setVisible(True)
+        self.ocr_progress.start_initial_progress() # This handles the initial 20% jump
 
-        image_path = self.image_paths[self.current_image_index]
-        print(f"Processing image {self.current_image_index + 1}/{len(self.image_paths)}: {os.path.basename(image_path)}")
-
+        # Clear previous standard results and determine starting row number
+        results_to_keep = [res for res in self.ocr_results if res.get('is_manual', False)]
+        self.ocr_results = results_to_keep # Immediately clear old results
+        
+        starting_row_number = 0
+        if results_to_keep:
+            max_existing_base = -1
+            for res in results_to_keep:
+                try: max_existing_base = max(max_existing_base, math.floor(float(res.get('row_number', -1))))
+                except: pass
+            starting_row_number = max_existing_base + 1
+        print(f"Starting standard OCR run. Next global row number will start from: {starting_row_number}")
+        
+        # --- 2. Gather settings for the handler ---
         self._load_filter_settings()
-        batch_size = int(self.settings.value("ocr_batch_size", 8))
-        decoder = self.settings.value("ocr_decoder", "beamsearch")
-        adjust_contrast = float(self.settings.value("ocr_adjust_contrast", 0.5))
-        resize_threshold = int(self.settings.value("ocr_resize_threshold", 1024))
+        ocr_settings = {
+            "min_text_height": self.min_text_height, "max_text_height": self.max_text_height,
+            "min_confidence": self.min_confidence, "distance_threshold": self.distance_threshold,
+            "batch_size": int(self.settings.value("ocr_batch_size", 8)), "decoder": self.settings.value("ocr_decoder", "beamsearch"),
+            "adjust_contrast": float(self.settings.value("ocr_adjust_contrast", 0.5)), "resize_threshold": int(self.settings.value("ocr_resize_threshold", 1024)),
+        }
 
-        self.ocr_processor = OCRProcessor(
-            image_path=image_path, reader=self.reader,
-            min_text_height=self.min_text_height, max_text_height=self.max_text_height,
-            min_confidence=self.min_confidence, distance_threshold=self.distance_threshold,
-            batch_size=batch_size, decoder=decoder,
-            adjust_contrast=adjust_contrast, resize_threshold=resize_threshold
+        # --- 3. Create, connect, and start the handler ---
+        self.batch_handler = BatchOCRHandler(
+            self.image_paths, self.reader, ocr_settings, starting_row_number
         )
+        self.batch_handler.batch_progress.connect(self.on_batch_progress_updated)
+        # --- NEW CONNECTION ---
+        self.batch_handler.image_processed.connect(self.on_image_processed)
+        self.batch_handler.batch_finished.connect(self.on_batch_finished)
+        self.batch_handler.error_occurred.connect(self.on_batch_error)
+        self.batch_handler.processing_stopped.connect(self.on_batch_stopped)
+        self.batch_handler.start_processing()
 
-        self.ocr_processor.ocr_progress.connect(self.update_ocr_progress_for_image)
-        self.ocr_processor.ocr_finished.connect(self.handle_ocr_results)
-        self.ocr_processor.error_occurred.connect(self.handle_error)
-        self.ocr_processor.start()
-
-    def update_ocr_progress_for_image(self, progress):
-        total_images = len(self.image_paths)
-        if total_images == 0: return
-        per_image_contribution = 80.0 / total_images
-        current_image_progress = progress / 100.0
-        overall_progress = 20 + (self.current_image_index * per_image_contribution) + (current_image_progress * per_image_contribution)
-        self.target_progress = min(int(overall_progress), 100)
-        self.ocr_progress.update_target_progress(self.target_progress)
-
-    def handle_ocr_results(self, processed_results):
-        """Receives filtered and merged results from OCRProcessor."""
-        if not self.ocr_processor or self.ocr_processor.stop_requested:
-            print("Partial results discarded due to stop request or processor issue")
+    # --- NEW SLOT for incremental updates ---
+    def on_image_processed(self, new_results):
+        """ Slot to receive results from a single processed image. Updates the model and views incrementally. """
+        if not new_results:
             return
 
-        self.ocr_progress.record_processing_time()
-
-        total_images = len(self.image_paths)
-        if total_images > 0:
-            per_image_contribution = 80.0 / total_images
-            overall_progress = 20 + ((self.current_image_index + 1) * per_image_contribution)
-            self.ocr_progress.update_target_progress(overall_progress)
-
-        current_image_path = self.image_paths[self.current_image_index]
-        filename = os.path.basename(current_image_path)
-
-        newly_processed_and_numbered_results = []
-        if processed_results:
-            try:
-                processed_results.sort(key=lambda r: min(p[1] for p in r.get('coordinates', [[0, float('inf')]])))
-            except (ValueError, TypeError, IndexError) as e:
-                print(f"Warning: Could not sort processed results for {filename}: {e}. Using processor order.")
-
-            for result in processed_results:
-                result['filename'] = filename
-                result['row_number'] = self.next_global_row_number
-                result['is_manual'] = False
-                newly_processed_and_numbered_results.append(result)
-                self.next_global_row_number += 1
-
-        self.ocr_results.extend(newly_processed_and_numbered_results)
-        print(f"Processed {filename}: Integrated {len(newly_processed_and_numbered_results)} block(s). Next global row is {self.next_global_row_number}")
-
+        # Append new data to the main list
+        self.ocr_results.extend(new_results)
         self._sort_ocr_results()
-        self.update_all_views(affected_filenames=[filename])
 
-        self.current_image_index += 1
+        # Update the UI. We can optimize by only updating the specific image.
+        affected_filename = new_results[0].get('filename')
+        self.update_all_views(affected_filenames=[affected_filename] if affected_filename else None)
+        print(f"MainWindow: Updated views with results from {affected_filename}")
 
-        if self.ocr_processor.stop_requested:
-             print("OCR stopped by user after processing image.")
-             self.stop_ocr()
-        elif self.current_image_index >= len(self.image_paths):
-            self.finish_ocr_run()
-        else:
-            self.process_next_image()
-
-    def finish_ocr_run(self):
-        """Cleans up after a successful OCR run."""
-        print("Finishing OCR run.")
-        self.btn_stop_ocr.setVisible(False)
-        self.btn_process.setVisible(True)
-        self.ocr_progress.update_target_progress(100)
-        self.ocr_processor = None
-        gc.collect()
+    # --- NEW: Slots to handle signals from BatchOCRHandler ---
+    def on_batch_progress_updated(self, progress):
+        """Updates the progress bar based on the handler's overall progress."""
+        self.ocr_progress.update_target_progress(progress)
+    
+    # --- MODIFIED SLOT for the final signal ---
+    def on_batch_finished(self, next_row_number):
+        """Handles the successful completion of the entire batch."""
+        print("MainWindow: Batch finished.")
+        self.next_global_row_number = next_row_number # Sync the final count
+        # UI views are already up-to-date from the incremental signals.
+        self.cleanup_ocr_session()
         QMessageBox.information(self, "Finished", "OCR processing completed for all images.")
 
-    def stop_ocr(self):
-        """Stops the currently running OCR process."""
-        print("Stopping OCR...")
-        if self.ocr_processor and self.ocr_processor.isRunning():
-            self.ocr_processor.stop_requested = True
-            print("Stop request sent to OCR processor.")
-        else:
-            print("No active OCR processor to stop.")
+    def on_batch_error(self, message):
+        """Handles a critical error during the batch process."""
+        print(f"MainWindow: Batch error received: {message}")
+        self.cleanup_ocr_session()
+        QMessageBox.critical(self, "OCR Error", message)
 
-        self.ocr_progress.reset()
-        self.btn_stop_ocr.setVisible(False)
-        self.btn_process.setVisible(True)
-        self.btn_process.setEnabled(bool(self.image_paths))
-        self.ocr_processor = None
-        gc.collect()
+    def on_batch_stopped(self):
+        """Handles the UI cleanup after the user manually stops the process."""
+        print("MainWindow: Batch processing was stopped by user.")
+        self.cleanup_ocr_session()
         QMessageBox.information(self, "Stopped", "OCR processing was stopped.")
 
-    def handle_error(self, message):
-        """Handles errors emitted by the OCRProcessor thread."""
-        print(f"Error occurred during OCR processing: {message}")
-        QMessageBox.critical(self, "OCR Error", message)
-        self.ocr_progress.reset()
+    def cleanup_ocr_session(self):
+        """Resets UI and state after an OCR run (success, error, or stop)."""
         self.btn_stop_ocr.setVisible(False)
         self.btn_process.setVisible(True)
         self.btn_process.setEnabled(bool(self.image_paths))
-        self.ocr_processor = None
+        self.ocr_progress.reset()
+        if self.batch_handler:
+            self.batch_handler.deleteLater() # Ensure proper cleanup of the QObject
+            self.batch_handler = None
         gc.collect()
+        
+    def stop_ocr(self):
+        """Stops the currently running OCR process by signaling the handler."""
+        print("MainWindow: Sending stop request to batch handler...")
+        if self.batch_handler:
+            self.batch_handler.stop()
+        else:
+            print("No active batch handler to stop.")
+            # If no handler, but UI is stuck, reset it
+            self.cleanup_ocr_session()
+
+    # --- REWRITTEN: handle_error to be a generic error display ---
+    def handle_error(self, message):
+        """Generic error display. The batch error is handled by on_batch_error."""
+        print(f"Error occurred: {message}")
+        QMessageBox.critical(self, "Error", message)
 
     def show_error_message(self, title, message):
         QMessageBox.critical(self, title, message)
 
+    # --- REWRITTEN: update_ocr_text now manages profiles ---
     def update_ocr_text(self, row_number, new_text):
-        """Updates the text for a given row number in the main data model."""
+        """Updates the text for a given row number in the active profile."""
         target_result, _ = self._find_result_by_row_number(row_number)
-        if target_result and target_result.get('text') != new_text:
-            if not target_result.get('is_deleted', False):
-                target_result['text'] = new_text
+        if not target_result or target_result.get('is_deleted', False):
+            return
 
+        # If user is editing while in the "Original" profile, create a new one.
+        if self.active_profile_name == "Original":
+            new_profile_name = "User Edit 1"
+            self.active_profile_name = new_profile_name
+            if new_profile_name not in self.profiles:
+                self.profiles[new_profile_name] = {}
+                self.update_profile_selector()
+                QMessageBox.information(self, "Edit Profile Created",
+                                        f"First edit detected. A new profile '{new_profile_name}' has been created and set as active. "
+                                        "Your original OCR text is preserved.")
+                # Future enhancement: Update a profile selector dropdown here.
+
+        # Ensure the 'translations' dictionary exists
+        if 'translations' not in target_result:
+            target_result['translations'] = {}
+
+        # If the new text is the same as the original, remove it from the profile
+        # to keep the data clean.
+        original_text = target_result.get('text', '')
+        if new_text == original_text:
+            if self.active_profile_name in target_result['translations']:
+                del target_result['translations'][self.active_profile_name]
+                print(f"Row {row_number}: Edit reverted to original. Removed from '{self.active_profile_name}' profile.")
+        else:
+            # Store the edit in the active profile
+            target_result['translations'][self.active_profile_name] = new_text
+            print(f"Row {row_number}: Text updated in '{self.active_profile_name}' profile.")
+
+
+    # --- REWRITTEN: combine_rows_in_model now uses profiles ---
     def combine_rows_in_model(self, first_row_number, combined_text, min_confidence, rows_to_delete):
-        """Updates the data model by combining OCR result rows."""
-        _, first_result_index = self._find_result_by_row_number(first_row_number)
+        """Updates the data model by combining OCR result rows into the active profile."""
+        first_result, first_result_index = self._find_result_by_row_number(first_row_number)
         if first_result_index == -1:
             QMessageBox.critical(self, "Error", "Could not find first row to update in data model.")
             return
 
-        self.ocr_results[first_result_index]['text'] = combined_text
-        self.ocr_results[first_result_index]['confidence'] = min_confidence
-        affected_filenames = {self.ocr_results[first_result_index].get('filename')}
+        # Logic to create a new profile on first edit, same as update_ocr_text
+        if self.active_profile_name == "Original":
+            new_profile_name = "User Edit 1"
+            self.active_profile_name = new_profile_name
+            if new_profile_name not in self.profiles:
+                self.profiles[new_profile_name] = {}
+                self.update_profile_selector()
+                QMessageBox.information(self, "Edit Profile Created",
+                                        f"First combination edit detected. A new profile '{new_profile_name}' has been created and set as active.")
 
+        # Update confidence on the original record, but store combined text in the profile
+        self.ocr_results[first_result_index]['confidence'] = min_confidence
+        if 'translations' not in self.ocr_results[first_result_index]:
+            self.ocr_results[first_result_index]['translations'] = {}
+        self.ocr_results[first_result_index]['translations'][self.active_profile_name] = combined_text
+
+        affected_filenames = {self.ocr_results[first_result_index].get('filename')}
+        
         for rn_to_delete in rows_to_delete:
             result_to_delete, delete_index = self._find_result_by_row_number(rn_to_delete)
             if delete_index != -1:
@@ -693,7 +763,7 @@ class MainWindow(QMainWindow):
             self.find_replace_widget.find_text()
 
         self.update_all_views(affected_filenames=list(filter(None, affected_filenames)))
-        QMessageBox.information(self, "Success", f"Combined rows into row {first_row_number}")
+        QMessageBox.information(self, "Success", f"Combined rows into row {first_row_number} in profile '{self.active_profile_name}'")
 
     def toggle_advanced_mode(self, state):
         if state:
@@ -735,6 +805,7 @@ class MainWindow(QMainWindow):
             if filename is None or row_number is None: continue
             if filenames_to_update and filename not in filenames_to_update: continue
             if filename not in grouped_results: grouped_results[filename] = {}
+            # --- MODIFIED: Pass the whole result object ---
             grouped_results[filename][row_number] = result
         for i in range(self.scroll_layout.count()):
             widget = self.scroll_layout.itemAt(i).widget()
@@ -742,7 +813,8 @@ class MainWindow(QMainWindow):
                 image_filename = widget.filename
                 if not filenames_to_update or image_filename in filenames_to_update:
                     results_for_this_image = grouped_results.get(image_filename, {})
-                    widget.apply_translation(results_for_this_image, DEFAULT_TEXT_STYLE)
+                    # --- MODIFIED: Pass self to access get_display_text ---
+                    widget.apply_translation(self, results_for_this_image, DEFAULT_TEXT_STYLE)
 
     def update_shortcut(self):
         combine_shortcut = self.settings.value("combine_shortcut", "Ctrl+G")
@@ -753,61 +825,104 @@ class MainWindow(QMainWindow):
         export_ocr_results(self)
 
     def start_translation(self):
+        """ Opens the TranslationWindow to handle the online translation process. """
         api_key = self.settings.value("gemini_api_key", "")
-        model_name = self.settings.value("gemini_model", "gemini-2.5-flash-preview-04-17")
         if not api_key:
-            QMessageBox.critical(self, "Error", "Please set Gemini API key in Settings"); return
-        content = generate_for_translate_content(self)
-        if not content.strip():
-             QMessageBox.warning(self, "Info", "No text found to translate (check OCR results and filters)."); return
-        print("\n===== DEBUG: Content sent to Gemini =====\n"); print(content); print("\n=======================================\n")
-        target_lang = self.settings.value("target_language", "English")
-        self.translation_progress_dialog = QMessageBox(self)
-        self.translation_progress_dialog.setWindowTitle("Translation in Progress")
-        self.translation_progress_dialog.setText("Translating content using Gemini API...")
-        self.translation_progress_dialog.setIcon(QMessageBox.Information)
-        self.translation_progress_dialog.setStandardButtons(QMessageBox.Cancel)
-        self.translation_progress_dialog.setDetailedText("Waiting for translation stream...")
-        self.translation_progress_dialog.show()
-        self.translation_thread = TranslationThread(api_key, content, model_name=model_name, target_lang=target_lang)
-        self.translation_thread.translation_finished.connect(self.on_translation_finished)
-        self.translation_thread.translation_failed.connect(self.on_translation_failed)
-        self.translation_thread.debug_print.connect(self.on_debug_print)
-        self.translation_thread.translation_progress.connect(self.on_translation_progress)
-        self.translation_thread.start()
+            QMessageBox.critical(self, "API Key Missing", "Please set your Gemini API key in Settings.")
+            return
 
-    def on_translation_progress(self, chunk):
-        if hasattr(self, 'translation_progress_dialog') and self.translation_progress_dialog.isVisible():
-            current_text = self.translation_progress_dialog.detailedText()
-            if current_text == "Waiting for translation stream...": current_text = ""
-            self.translation_progress_dialog.setDetailedText(current_text + chunk)
+        if not self.ocr_results:
+            QMessageBox.warning(self, "No Data", "There are no OCR results to translate.")
+            return
+            
+        model_name = self.settings.value("gemini_model", "gemini-1.5-flash-latest")
 
-    def on_translation_finished(self, translated_text):
-        if hasattr(self, 'translation_progress_dialog') and self.translation_progress_dialog.isVisible():
-            self.translation_progress_dialog.accept()
+        # Create and execute the modal translation dialog
+        dialog = TranslationWindow(
+            api_key, model_name, self.ocr_results, list(self.profiles.keys()), self
+        )
+        dialog.translation_complete.connect(self.handle_translation_completed)
+        dialog.exec_() # Blocks until the dialog is closed
+
+    def handle_translation_completed(self, profile_name, translated_data):
+        """  Slot to receive the completed translation from TranslationWindow. Applies the new data as a new profile. """
         try:
-            self.import_translated_content(translated_text)
-            QMessageBox.information(self, "Success", "Translation completed successfully!")
+            unique_profile_name = self._get_unique_profile_name(profile_name)
+            self._apply_translation_profile(unique_profile_name, translated_data)
+            
+            QMessageBox.information(self, "Success", 
+                f"Translation successfully applied to new profile:\n'{unique_profile_name}'")
+
         except Exception as e:
             QMessageBox.critical(self, "Import Error", f"Failed to apply translation: {str(e)}")
+            traceback.print_exc()
 
-    def on_translation_failed(self, error_message):
-        if hasattr(self, 'translation_progress_dialog') and self.translation_progress_dialog.isVisible():
-            self.translation_progress_dialog.accept()
-        QMessageBox.critical(self, "Translation Error", error_message)
+    def _apply_translation_profile(self, profile_name, translation_data):
+        """ Merges a dictionary of translated data into the main ocr_results under a specific profile name. """
+        if profile_name in self.profiles:
+            print(f"Warning: Overwriting existing profile '{profile_name}'.")
+        
+        applied_count = 0
+        for result in self.ocr_results:
+            # Skip deleted results
+            if result.get('is_deleted', False):
+                continue
 
-    def on_debug_print(self, debug_message):
-        print(f"DEBUG (Translation Thread): {debug_message}")
+            filename = result.get('filename')
+            row_number_str = str(result.get('row_number'))
 
-    def import_translated_content(self, content):
+            # Check if a translation exists for this specific result
+            if filename in translation_data and row_number_str in translation_data[filename]:
+                translated_text = translation_data[filename][row_number_str]
+                
+                # Ensure the translations dictionary exists
+                if 'translations' not in result:
+                    result['translations'] = {}
+                
+                # Store the new text in the specified profile
+                result['translations'][profile_name] = translated_text
+                applied_count += 1
+
+        print(f"Applied {applied_count} translations to profile '{profile_name}'.")
+        
+        # Update the main window's state
+        self.profiles[profile_name] = {}
+        self.active_profile_name = profile_name
+        self.update_profile_selector()
+        self.update_all_views()
+
+    def _get_unique_profile_name(self, base_name):
+        """Ensures the profile name is unique to avoid accidental overwrites."""
+        if base_name not in self.profiles:
+            return base_name
+        
+        i = 1
+        while True:
+            new_name = f"{base_name} ({i})"
+            if new_name not in self.profiles:
+                return new_name
+            i += 1
+        
+    # --- REWRITTEN to support profiles ---
+    def import_translated_content(self, content, profile_name):
         try:
-            import_translation_file_content(self, content)
+            import_translation_file_content(self, content, profile_name)
+            self.active_profile_name = profile_name
+            if profile_name not in self.profiles:
+                self.profiles[profile_name] = {}
+            print(f"Switched to active profile: {profile_name}")
             self.update_all_views()
         except Exception as e:
-            raise Exception(f"Failed to import translation content: {str(e)}")
+            raise Exception(f"Failed to import translation content into profile '{profile_name}': {str(e)}")
 
     def import_translation(self):
-        if import_translation_file(self):
+        # --- MODIFIED: Use a distinct profile name ---
+        profile_name = "Imported Translation"
+        if import_translation_file(self, profile_name):
+            self.active_profile_name = profile_name
+            if profile_name not in self.profiles:
+                self.profiles[profile_name] = {}
+            print(f"Switched to active profile: {profile_name}")
             self.update_all_views()
 
     def export_manhwa(self):
@@ -821,6 +936,7 @@ class MainWindow(QMainWindow):
         try:
             self._sort_ocr_results()
             with open(master_path, 'w', encoding='utf-8') as f:
+                # The 'translations' dict is now part of ocr_results, so it's saved automatically
                 json.dump(self.ocr_results, f, indent=2, ensure_ascii=False)
             with zipfile.ZipFile(self.mmtl_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
                 for root, dirs, files in os.walk(self.temp_dir):

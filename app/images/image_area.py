@@ -34,26 +34,35 @@ class ResizableImageLabel(QGraphicsView):
 
         self.setCursor(Qt.ArrowCursor)
 
-    # --- apply_translation is updated to use TextBoxItem  ---
-    def apply_translation(self, text_entries_by_row, default_style):
+    # --- *** MODIFIED: Method signature now accepts main_window *** ---
+    def apply_translation(self, main_window, text_entries_by_row, default_style):
+        """
+        Applies text and styles to the image.
+        It is now profile-aware by using main_window.get_display_text().
+        """
         processed_default_style = self._ensure_gradient_defaults_for_ril(default_style)
         current_entries = {rn: entry for rn, entry in text_entries_by_row.items()
                            if not entry.get('is_deleted', False)}
         existing_boxes = {tb.row_number: tb for tb in self.text_boxes}
         rows_to_remove_from_list = []
 
+        # Update or remove existing text boxes
         for row_number, text_box in list(existing_boxes.items()):
             if row_number not in current_entries:
                 text_box.cleanup()
                 rows_to_remove_from_list.append(row_number)
             else:
                 entry = current_entries[row_number]
+                # --- *** MODIFIED: Get text from the active profile via main_window *** ---
+                display_text = main_window.get_display_text(entry)
                 combined_style = self._combine_styles(processed_default_style, entry.get('custom_style', {}))
-                text_box.text_item.setPlainText(entry.get('text', ''))
+                
+                text_box.text_item.setPlainText(display_text)
                 text_box.apply_styles(combined_style)
 
         self.text_boxes = [tb for tb in self.text_boxes if tb.row_number not in rows_to_remove_from_list]
 
+        # Add new text boxes
         existing_rows_after_removal = {tb.row_number for tb in self.text_boxes}
         for row_number, entry in current_entries.items():
             if row_number not in existing_rows_after_removal:
@@ -66,13 +75,14 @@ class ResizableImageLabel(QGraphicsView):
                 except Exception as e:
                     print(f"Error processing coords for new row {row_number}: {coords} -> {e}")
                     continue
-
+                
+                # --- *** MODIFIED: Get text from the active profile via main_window *** ---
+                display_text = main_window.get_display_text(entry)
                 combined_style = self._combine_styles(processed_default_style, entry.get('custom_style', {}))
                 
-                # *** CHANGE: Instantiate TextBoxItem  instead of TextBoxItem ***
                 text_box = TextBoxItem (QRectF(x, y, width, height),
                                          row_number,
-                                         entry.get('text', ''),
+                                         display_text,
                                          initial_style=combined_style)
 
                 text_box.signals.rowDeleted.connect(self.handle_text_box_deleted)
@@ -192,6 +202,27 @@ class ResizableImageLabel(QGraphicsView):
     def deselect_all_text_boxes(self):
         for text_box in self.text_boxes:
             if text_box.isSelected(): text_box.setSelected(False)
+    
+    def select_text_box(self, row_number_to_select):
+        """Finds and selects a specific text box, deselecting others."""
+        box_to_select = None
+        for tb in self.text_boxes:
+            if tb.row_number == row_number_to_select:
+                box_to_select = tb
+                break
+        
+        if box_to_select:
+            # First deselect all others to ensure signals are clean
+            for tb in self.text_boxes:
+                if tb is not box_to_select and tb.isSelected():
+                    tb.setSelected(False)
+            
+            # Now select the target one
+            if not box_to_select.isSelected():
+                box_to_select.setSelected(True)
+            
+            return box_to_select
+        return None
 
     def handle_text_box_deleted(self, row_number):
         self.textBoxDeleted.emit(row_number)
