@@ -776,22 +776,30 @@ class TranslationWindow(QDialog):
                     if filename not in complete_profile_translations:
                         complete_profile_translations[filename] = {}
 
-                    # Default to the source text as a fallback.
                     source_text = self._get_text_for_profile(result, source_profile_name)
-                    text_to_apply = source_text
+                    text_to_apply = "" # Reset for each row
 
-                    # If this row is selected, check for a valid translation to override the fallback.
+                    # If the row is selected, its current UI text is the definitive version.
                     if key in checked_keys:
                         label = col_data['widgets'].get(key)
                         if label:
-                            translated_text = label.text()
-                            # Ensure the text is a real translation, not a placeholder.
-                            if translated_text and translated_text != "...":
-                                text_to_apply = translated_text
-                                # Check if this is a real change worth saving
-                                if translated_text != source_text:
+                            widget_text = label.text()
+                            if widget_text and widget_text != "...":
+                                text_to_apply = widget_text
+                                # A change is only "valid" for saving if a selected row differs from the source.
+                                if widget_text != source_text:
                                     column_has_valid_translations_to_apply = True
-                    
+                    # If the row is not selected, we must preserve any previous translation it had.
+                    else: # key not in checked_keys
+                        old_translation = col_data.get('translations', {}).get(filename, {}).get(row_number)
+                        if old_translation and old_translation != "...":
+                            text_to_apply = old_translation
+
+                    # If after all checks, we have no text, fall back to the source.
+                    # This handles unselected rows that never had a translation.
+                    if not text_to_apply:
+                        text_to_apply = source_text
+
                     complete_profile_translations[filename][row_number] = text_to_apply
 
                 # Only emit the signal if this column has at least one actual, new translation.
