@@ -5,27 +5,39 @@ import qtawesome as qta
 from enum import Enum, auto
 from assets.styles import IV_BUTTON_STYLES
 
+# ADDED: State definition for the title bar/menu bar behavior
+class TitleBarState(Enum):
+    MAIN_WINDOW = auto() # For the main editor window with a project loaded
+    HOME = auto()        # For the home/welcome screen
+    NON_MAIN = auto()    # For dialogs, settings, etc. that shouldn't have a menu bar
+
 class MenuBar(QMenuBar):
-    def __init__(self, parent):
+    # MODIFIED: __init__ now accepts a state to control its contents, defaulting to HOME.
+    def __init__(self, parent, state=TitleBarState.HOME):
         super().__init__(parent)
-        self.main_window = parent  # Reference to main window
+        self.main_window = parent  # Reference to the parent window (e.g., MainWindow, Home)
+        self.state = state         # Store the current state
         self.setStyleSheet("""
             QMenuBar {
-                background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #2D2D2D, stop:1 #1E1E1E);
-                padding: 5px;
+                background-color: transparent;
             }
             QMenuBar::item {
                 background-color: transparent;
                 padding: 8px 16px;
                 margin: 0px 2px;
                 border-radius: 4px;
+                color: white;
             }
             QMenuBar::item:selected {
                 background-color: #4A4A4A;
                 color: #FFFFFF;
             }
         """)                   
-        self.create_menu_bar()
+        
+        # Only create menu bar contents if the state is not NON_MAIN.
+        # This is a safe guard; the parent (CustomTitleBar) should already handle this.
+        if self.state != TitleBarState.NON_MAIN:
+            self.create_menu_bar()
         # Add other menus here
         
     def create_menu_bar(self):
@@ -47,10 +59,10 @@ class MenuBar(QMenuBar):
             }
         """)
         
-        # File menu actions with icons and shortcuts
         file_menu_action = file_menu.menuAction()
         file_menu_action.setIcon(qta.icon('fa5s.file', color="white"))
 
+        # --- Actions available in all states (HOME and MAIN_WINDOW) ---
         new_project_action = QAction(qta.icon('fa5s.file-alt', color="white"), "New Project", self)
         new_project_action.setShortcut("Ctrl+N")
         new_project_action.triggered.connect(self.new_project)
@@ -67,21 +79,35 @@ class MenuBar(QMenuBar):
 
         file_menu.addSeparator()
         
+        # --- Create actions that depend on the state ---
+        # These actions require an active project/main window context.
         save_action = QAction(qta.icon('fa5s.save', color="white"), "Save Project", self)
-        save_action.setShortcut("Ctrl+S")
-        save_action.triggered.connect(self.main_window.save_project)
-        file_menu.addAction(save_action)
-        
         save_as_action = QAction(qta.icon('fa5s.download', color="white"), "Save Project As...", self)
-        save_as_action.setShortcut("Ctrl+Shift+S")
-        save_as_action.triggered.connect(self.save_project_as)
+        
+        file_menu.addAction(save_action)
         file_menu.addAction(save_as_action)
         
         file_menu.addSeparator()
         
         home_action = QAction(qta.icon('fa5s.home', color="white"), "Go to Home", self)
-        home_action.triggered.connect(self.go_to_home)
         file_menu.addAction(home_action)
+
+        # --- Configure state-dependent actions ---
+        if self.state == TitleBarState.MAIN_WINDOW:
+            # In MAIN_WINDOW state, actions are fully enabled and connected.
+            save_action.setShortcut("Ctrl+S")
+            save_action.triggered.connect(self.main_window.save_project)
+            
+            save_as_action.setShortcut("Ctrl+Shift+S")
+            save_as_action.triggered.connect(self.save_project_as)
+            
+            home_action.triggered.connect(self.go_to_home)
+        else:
+            # In HOME state, these actions are not applicable and are disabled.
+            # This prevents calling methods that don't exist on the Home window.
+            save_action.setEnabled(False)
+            save_as_action.setEnabled(False)
+            home_action.setEnabled(False)
 
     def new_project(self):
         from utils.project_processing import new_project

@@ -252,7 +252,7 @@ class ResultsWidget(QWidget):
              self._update_simple_view_text_if_visible(original_row_number, new_text)
 
     def scroll_to_row(self, row_number):
-        """Scrolls the active view to make the specified row_number visible at the top."""
+        """Scrolls the active view to make the specified row_number visible, preferably centered."""
         found = False
         try:
             target_rn_float = float(row_number)
@@ -267,8 +267,13 @@ class ResultsWidget(QWidget):
                 if item and item.data(Qt.UserRole) is not None:
                     try:
                         if math.isclose(float(item.data(Qt.UserRole)), target_rn_float):
-                            # --- MODIFICATION: Change to PositionAtTop ---
-                            self.results_table.scrollToItem(item, QAbstractItemView.PositionAtTop)
+                            # Check if the item is already visible before scrolling
+                            item_rect = self.results_table.visualRect(self.results_table.indexFromItem(item))
+                            viewport_rect = self.results_table.viewport().rect()
+                            
+                            if not viewport_rect.contains(item_rect):
+                                self.results_table.scrollToItem(item, QAbstractItemView.PositionAtCenter)
+
                             found = True
                             break
                     except (ValueError, TypeError):
@@ -280,8 +285,24 @@ class ResultsWidget(QWidget):
                 if widget and widget.property("ocr_row_number") is not None:
                     try:
                         if math.isclose(float(widget.property("ocr_row_number")), target_rn_float):
-                            # --- MODIFICATION: Set scrollbar value directly to position the widget at the top ---
-                            self.simple_scroll.verticalScrollBar().setValue(widget.y())
+                            # Check if the widget is visible, then scroll to center if it's not
+                            scrollbar = self.simple_scroll.verticalScrollBar()
+                            viewport_height = self.simple_scroll.viewport().height()
+                            current_scroll_y = scrollbar.value()
+
+                            widget_y = widget.y()
+                            widget_height = widget.height()
+
+                            # Check if the widget is fully visible
+                            is_visible = (widget_y >= current_scroll_y) and \
+                                         (widget_y + widget_height <= current_scroll_y + viewport_height)
+                            
+                            if not is_visible:
+                                # Calculate position to center the widget in the viewport
+                                target_scroll_y = widget_y + (widget_height / 2) - (viewport_height / 2)
+                                clamped_scroll_y = max(scrollbar.minimum(), min(int(target_scroll_y), scrollbar.maximum()))
+                                scrollbar.setValue(clamped_scroll_y)
+                            
                             found = True
                             break
                     except (ValueError, TypeError):

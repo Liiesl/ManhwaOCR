@@ -8,7 +8,8 @@ from utils.file_io import export_ocr_results, import_translation_file, export_re
 from app import (ResizableImageLabel, CustomProgressBar, MenuBar, CustomScrollArea, ResultsWidget, TextBoxStylePanel, 
                  FindReplaceWidget, ImportExportMenu, SaveMenu, BatchOCRHandler, ProjectLoader, ManualOCRHandler )
 from utils.settings import SettingsDialog
-from core.translations import TranslationWindow, import_translation_file_content
+from core.translations import import_translation_file_content
+from core.translation_wndow import TranslationWindow
 from assets.styles import (COLORS, MAIN_STYLESHEET, IV_BUTTON_STYLES, ADVANCED_CHECK_STYLES, RIGHT_WIDGET_STYLES,
                             DEFAULT_TEXT_STYLE, DELETE_ROW_STYLES, get_style_diff)
 from assets.styles2 import MANUALOCR_STYLES
@@ -409,15 +410,52 @@ class MainWindow(QMainWindow):
                 if isinstance(widget, ResizableImageLabel):
                     if widget.filename == filename:
                         target_image_label = widget
-                        # Scroll the image into view, positioning it at the top
-                        self.scroll_area.verticalScrollBar().setValue(widget.y())
+                        # SCROLLING LOGIC IS MOVED to after the text box is selected.
                     else:
                         # Deselect boxes on all other images
                         widget.deselect_all_text_boxes()
 
             if target_image_label:
-                # Tell the found image widget to select the correct text box
-                target_image_label.select_text_box(row_number)
+                # Tell the found image widget to select the correct text box.
+                # This now returns the QGraphicsItem for the text box.
+                selected_box_item = target_image_label.select_text_box(row_number)
+
+                # --- NEW SCROLL LOGIC to center the selected box if not visible ---
+                if selected_box_item:
+                    # 1. Get coordinates and dimensions
+                    scroll_viewport = self.scroll_area.viewport()
+                    viewport_height = scroll_viewport.height()
+                    current_scroll_y = self.scroll_area.verticalScrollBar().value()
+                    
+                    image_label_y_in_scroll = target_image_label.y()
+                    
+                    # Scene coordinates of the text box
+                    box_rect_scene = selected_box_item.sceneBoundingRect()
+                    
+                    # Scale factor from the QGraphicsView transform
+                    scale = target_image_label.transform().m11()
+                    
+                    # Box position relative to the top of the image label, scaled
+                    box_top_in_image = box_rect_scene.top() * scale
+                    box_bottom_in_image = box_rect_scene.bottom() * scale
+                    box_center_y_in_image = box_rect_scene.center().y() * scale
+
+                    # Box absolute position in the entire scrollable area content
+                    box_global_top = image_label_y_in_scroll + box_top_in_image
+                    box_global_bottom = image_label_y_in_scroll + box_bottom_in_image
+
+                    # 2. Check if the text box is fully visible in the viewport
+                    is_visible = (box_global_top >= current_scroll_y) and \
+                                 (box_global_bottom <= current_scroll_y + viewport_height)
+                    
+                    if not is_visible:
+                        # 3. Calculate new scroll position to center the box
+                        target_scroll_y = image_label_y_in_scroll + box_center_y_in_image - (viewport_height / 2)
+                        
+                        # 4. Clamp the value to be within scrollbar's valid range and scroll
+                        scrollbar = self.scroll_area.verticalScrollBar()
+                        clamped_scroll_y = max(scrollbar.minimum(), min(int(target_scroll_y), scrollbar.maximum()))
+                        scrollbar.setValue(clamped_scroll_y)
 
         finally:
             self._is_handling_selection = False
@@ -845,13 +883,12 @@ class MainWindow(QMainWindow):
         dialog.exec_() # Blocks until the dialog is closed
 
     def handle_translation_completed(self, profile_name, translated_data):
-        """  Slot to receive the completed translation from TranslationWindow. Applies the new data as a new profile. """
+        """  Slot to receive the completed translation from TranslationWindow. Applies the new data, overwriting an existing profile if the name matches. """
         try:
-            unique_profile_name = self._get_unique_profile_name(profile_name)
-            self._apply_translation_profile(unique_profile_name, translated_data)
+            self._apply_translation_profile(profile_name, translated_data)
             
             QMessageBox.information(self, "Success", 
-                f"Translation successfully applied to new profile:\n'{unique_profile_name}'")
+                f"Translation successfully applied to profile:\n'{profile_name}'")
 
         except Exception as e:
             QMessageBox.critical(self, "Import Error", f"Failed to apply translation: {str(e)}")
@@ -890,18 +927,6 @@ class MainWindow(QMainWindow):
         self.active_profile_name = profile_name
         self.update_profile_selector()
         self.update_all_views()
-
-    def _get_unique_profile_name(self, base_name):
-        """Ensures the profile name is unique to avoid accidental overwrites."""
-        if base_name not in self.profiles:
-            return base_name
-        
-        i = 1
-        while True:
-            new_name = f"{base_name} ({i})"
-            if new_name not in self.profiles:
-                return new_name
-            i += 1
         
     # --- REWRITTEN to support profiles ---
     def import_translated_content(self, content, profile_name):
