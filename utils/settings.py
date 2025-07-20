@@ -126,13 +126,12 @@ class SettingsDialog(QDialog):
         # Define model information (actual_name, display_info_text)
         # Order matches the original list provided in the problem description
         GEMINI_MODELS_WITH_INFO = [
-            ("gemini-2.5-flash", "500 req/day (free tier)"),
-            ("gemini-2.5-flash-preview-04-17", "500 req/day (free tier)"),
-            ("gemini-2.5-pro", "No free tier"),
-            ("gemini-2.5-pro-preview-05-06", "No free tier"),
-            ("gemini-2.5-flash-lite-preview-06-17", "500 req/day (free tier)"), # CORRECTED
-            ("gemini-2.0-flash", "1500 req/day (free tier)"),
-            ("gemini-2.0-flash-lite", "1500 req/day (free tier)"),
+            ("gemini-2.5-flash", "250 req/day (free tier)"),
+            ("gemini-2.5-pro", "100 req/day (free tier)"),
+            ("gemini-2.5-flash-lite-preview-06-17", "1000 req/day (free tier)"),
+            ("gemini-2.0-flash", "200 req/day (free tier)"),
+            ("gemini-2.0-flash-lite", "200 req/day (free tier)"),
+            ("gemma-3-27b-it", "14400 req/day")
             ("gemma-3n-e4b-it", "14400 req/day")
         ]
 
@@ -140,7 +139,7 @@ class SettingsDialog(QDialog):
             display_text = f"{model_name} | {model_info_text}"
             self.model_combo.addItem(display_text, userData=model_name) # Store actual model name as userData
 
-        current_model_value = self.settings.value("gemini_model", "gemini-2.0-flash")
+        current_model_value = self.settings.value("gemini_model", "gemini-2.5-flash")
         # Find the index of the item whose userData matches the saved model name
         for i in range(self.model_combo.count()):
             if self.model_combo.itemData(i) == current_model_value:
