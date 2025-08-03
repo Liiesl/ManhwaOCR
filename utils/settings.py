@@ -131,8 +131,8 @@ class SettingsDialog(QDialog):
             ("gemini-2.5-flash-lite-preview-06-17", "1000 req/day (free tier)"),
             ("gemini-2.0-flash", "200 req/day (free tier)"),
             ("gemini-2.0-flash-lite", "200 req/day (free tier)"),
-            ("gemma-3-27b-it", "14400 req/day")
-            ("gemma-3n-e4b-it", "14400 req/day")
+            ("gemma-3-27b-it", "14400 req/day"),
+            ("gemma-3n-e4b-it", "14400 req/day"),
         ]
 
         for model_name, model_info_text in GEMINI_MODELS_WITH_INFO:

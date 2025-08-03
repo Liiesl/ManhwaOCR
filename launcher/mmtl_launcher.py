@@ -1,8 +1,8 @@
 # mmtl_launcher.py
-# A launcher for the ManhwOCR that can run in two modes:
+# A launcher for ManhwOCR that can run in two modes:
 # 1. Fast path: Launches the main application without a GUI, using command line arguments.
-# 2. Slow path: Shows a configuration dialog to set paths for the main application and  
-# Bundle it yourself and set the executable as the default application for .mmtl files.
+# 2. Slow path: Shows a configuration dialog to set paths for the main application.
+# This launcher uses PySide6 and is designed to be compiled with Nuitka.
 
 import sys
 import os
@@ -11,23 +11,40 @@ import subprocess
 # --- Non-GUI Helper Functions (for the fast path) ---
 def show_native_error(title, message):
     """
-    Displays a native Windows message box without needing PyQt5.
-    This is very fast and ideal for showing errors when the GUI isn't loaded.
+    Displays a native message box using PySide6.
+    This is used to show errors when the main GUI isn't loaded.
+    It creates a temporary QApplication to show the message.
     """
-    import ctypes
-    # MB_OK | MB_ICONERROR
-    # For more options, see: https://docs.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-messageboxw
-    ctypes.windll.user32.MessageBoxW(0, message, title, 0x0 | 0x10)
+    # PySide6 is imported locally to keep the fast path fast.
+    from PySide6.QtWidgets import QApplication, QMessageBox
+
+    # An application instance is required for any GUI elements.
+    if not QApplication.instance():
+        app = QApplication(sys.argv)
+        is_temp_app = True
+    else:
+        app = QApplication.instance()
+        is_temp_app = False
+
+    msg_box = QMessageBox()
+    msg_box.setIcon(QMessageBox.Icon.Critical)
+    msg_box.setWindowTitle(title)
+    msg_box.setText(message)
+    msg_box.setStandardButtons(QMessageBox.StandardButton.Ok)
+    msg_box.exec()
+
+    # Clean up the temporary application if we created one.
+    if is_temp_app:
+        app.quit()
 
 
 def get_settings_value(key):
     """
     Reads a value from QSettings without needing a QApplication instance.
     We must import QSettings locally to avoid loading it when not needed.
-    Note: QSettings can be slow. For maximum speed, a simple .ini or .json
-    file could be even faster, but QSettings is fine for this use case.
+    Note: This now uses PySide6's QSettings.
     """
-    from PyQt5.QtCore import QSettings
+    from PySide6.QtCore import QSettings
     settings = QSettings("YourCompany", "MangaOCRTool")
     return settings.value(key)
 
@@ -62,13 +79,20 @@ def launch_main_app_fast(mmtl_path):
         )
         return
 
+    # --- FIX STARTS HERE ---
+    # Get the directory where main.py is located. This is the crucial step.
+    main_app_dir = os.path.dirname(main_py_path)
+    # --- FIX ENDS HERE ---
+
     # Launch the main app as a separate process and exit immediately.
     command = [python_executable, main_py_path, mmtl_path]
     try:
         # Popen is non-blocking. The launcher will exit as soon as it's called.
-        # The `creationflags` argument was removed to allow the console window of main.py to appear.
-        subprocess.Popen(command)
-        print(f"Executing command: {' '.join(command)}") # For debugging
+        # --- FIX STARTS HERE ---
+        # Add the 'cwd' argument to set the correct working directory for the main app.
+        subprocess.Popen(command, cwd=main_app_dir)
+        # --- FIX ENDS HERE ---
+        print(f"Executing command: {' '.join(command)} in directory: {main_app_dir}") # For debugging
     except Exception as e:
         show_native_error(
             "Execution Error",
@@ -80,14 +104,14 @@ def launch_main_app_fast(mmtl_path):
 
 def show_configuration_dialog():
     """
-    The 'slow path' that imports PyQt5 and shows the configuration GUI.
+    The 'slow path' that imports PySide6 and shows the configuration GUI.
     This is only called when the launcher is run without arguments.
     """
-    # --- LAZY IMPORTS: PyQt5 is only imported when this function is called ---
-    from PyQt5.QtWidgets import (QApplication, QWidget, QVBoxLayout, QHBoxLayout,
+    # --- LAZY IMPORTS: PySide6 is only imported when this function is called ---
+    from PySide6.QtWidgets import (QApplication, QWidget, QVBoxLayout, QHBoxLayout,
                                  QLabel, QLineEdit, QPushButton, QFileDialog,
                                  QMessageBox, QFrame)
-    from PyQt5.QtCore import QSettings
+    from PySide6.QtCore import QSettings
 
     SETTINGS = QSettings("YourCompany", "MangaOCRTool")
     MAIN_PY_PATH_KEY = "launcher/main_py_path"
@@ -118,8 +142,8 @@ def show_configuration_dialog():
             py_path_layout.addWidget(self.browse_py_btn)
             layout.addLayout(py_path_layout)
             separator = QFrame()
-            separator.setFrameShape(QFrame.HLine)
-            separator.setFrameShadow(QFrame.Sunken)
+            separator.setFrameShape(QFrame.Shape.HLine)
+            separator.setFrameShadow(QFrame.Shadow.Sunken)
             layout.addWidget(separator)
             main_label = QLabel("2. Set the full path to your main.py file.")
             main_label.setStyleSheet("font-weight: bold;")
@@ -170,11 +194,11 @@ def show_configuration_dialog():
             QMessageBox.information(self, "Success", "Paths saved successfully!")
             self.close()
 
-    # This is the standard boilerplate to run a PyQt5 app
+    # This is the standard boilerplate to run a PySide6 app
     app = QApplication(sys.argv)
     config_window = LauncherConfigDialog()
     config_window.show()
-    sys.exit(app.exec_())
+    sys.exit(app.exec())
 
 
 if __name__ == "__main__":
