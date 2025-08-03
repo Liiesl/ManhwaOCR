@@ -9,7 +9,8 @@ testui.py
 /md_splitter/
 translated_manhwa.zip
 generate-ascii-tree.py
-/launcher/build/
-/launcher/dist/
 /launcher/mmtl_launcher.exe
-/launcher/mmtl_launcher.spec
+/launcher/nuitka.bash
+/launcher/mmtl_launcher.build
+/launcher/mmtl_launcher.dist
+/launcher/mmtl_launcher.onefile-build
