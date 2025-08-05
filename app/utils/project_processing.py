@@ -4,7 +4,7 @@ import json
 import tempfile
 import re
 from shutil import copyfile, rmtree
-from app.project_dialog import NewProjectDialog, ImportWFWFDialog
+from app.ui.dialogs import NewProjectDialog, ImportWFWFDialog
 from PyQt5.QtWidgets import QMessageBox, QFileDialog, QDialog, QApplication
 from PyQt5.QtCore import QDateTime, QDir, Qt
 
@@ -137,7 +137,7 @@ def launch_project(self, mmtl_path):
         
         def handle_project_loaded(mmtl_path, temp_dir):
             try:
-                from app.main_window import MainWindow
+                from app.ui.window import MainWindow
                 
                 # Update recent projects if we're in the MenuBar class
                 if hasattr(self, 'main_window'):
