@@ -6,7 +6,7 @@ import numpy as np
 from PIL import Image, ImageEnhance # Added ImageEnhance
 import traceback
 import time
-from core.data_processing import group_and_merge_text # Import merging function
+from app.core.data_processing import group_and_merge_text # Import merging function
 
 class OCRProcessor(QThread):
     ocr_progress = pyqtSignal(int)  # Progress for the current image (0-100)

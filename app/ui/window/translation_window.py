@@ -4,7 +4,7 @@ from PyQt5.QtWidgets import ( QDialog, QVBoxLayout, QHBoxLayout, QPushButton, QL
 from PyQt5.QtCore import Qt, QSize, pyqtSignal, QEvent, QTimer, QObject
 from PyQt5.QtGui import QKeySequence, QIcon  
 import qtawesome as qta
-from core.translations import TranslationThread, _get_text_for_profile_static, generate_for_translate_content, generate_retranslate_content, import_translation_file_content
+from app.core.translations import TranslationThread, _get_text_for_profile_static, generate_for_translate_content, generate_retranslate_content, import_translation_file_content
 
 # Gemini Model List - copied from settings.py for local use
 # NOTE: The original settings.py file contained a set literal for one entry, which has been corrected to a tuple here.

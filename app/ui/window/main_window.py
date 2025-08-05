@@ -4,13 +4,14 @@ from PyQt5.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QSi
 from PyQt5.QtCore import Qt, QSettings, QPoint
 from PyQt5.QtGui import QPixmap, QKeySequence, QColor
 import qtawesome as qta
-from utils.file_io import export_ocr_results, import_translation_file, export_rendered_images
-from app import (ResizableImageLabel, CustomProgressBar, MenuBar, CustomScrollArea, ResultsWidget, TextBoxStylePanel, 
-                 FindReplaceWidget, ImportExportMenu, SaveMenu, BatchOCRHandler, ProjectLoader, ManualOCRHandler, ActionMenu,
-                 StitchHandler) # --- MODIFIED: Import StitchHandler ---
-from utils.settings import SettingsDialog
-from core.translations import import_translation_file_content
-from core.translation_wndow import TranslationWindow
+from app.utils.file_io import export_ocr_results, import_translation_file, export_rendered_images
+from app.ui.components import ResizableImageLabel, CustomScrollArea, ResultsWidget, TextBoxStylePanel, FindReplaceWidget, ImportExportMenu, SaveMenu, ActionMenu
+from app.ui.widgets import CustomProgressBar, MenuBar 
+from app.ui.handlers import BatchOCRHandler, ManualOCRHandler, StitchHandler 
+from app.ui import ProjectLoader
+from app.ui.dialogs import SettingsDialog
+from app.core.translations import import_translation_file_content
+from app.ui.window.translation_window import TranslationWindow
 from assets.styles import (COLORS, MAIN_STYLESHEET, IV_BUTTON_STYLES, ADVANCED_CHECK_STYLES, RIGHT_WIDGET_STYLES,
                             DEFAULT_TEXT_STYLE, DELETE_ROW_STYLES, get_style_diff)
 from assets.styles2 import MANUALOCR_STYLES

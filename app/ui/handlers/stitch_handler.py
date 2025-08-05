@@ -3,7 +3,7 @@
 from PyQt5.QtWidgets import QWidget, QHBoxLayout, QPushButton, QMessageBox
 from PyQt5.QtCore import QObject, Qt
 from PyQt5.QtGui import QPixmap, QPainter
-from app import ResizableImageLabel
+from app.ui.components import ResizableImageLabel
 import qtawesome as qta
 import os
 

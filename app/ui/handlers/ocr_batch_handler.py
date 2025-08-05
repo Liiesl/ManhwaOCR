@@ -1,6 +1,6 @@
 import os, gc, time, math, traceback
 from PyQt5.QtCore import QObject, pyqtSignal
-from core.ocr_processor import OCRProcessor
+from app.core.ocr_processor import OCRProcessor
 
 class BatchOCRHandler(QObject):
     """

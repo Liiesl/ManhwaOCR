@@ -6,9 +6,9 @@ from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QLabel, QComboBox, QPushButto
 from PyQt5.QtCore import Qt, pyqtSignal, QSettings
 from PyQt5.QtGui import (QColor, QFontDatabase)
 import qtawesome as qta
-from app.images.preset import PresetButton
+from app.ui.components import PresetButton
 from assets.styles import TEXT_BOX_STYLE_PANEL_STYLESHEET, DEFAULT_GRADIENT
-from BetterColorDialog import CustomColorDialog
+from app.ui.dialogs import CustomColorDialog
 
 def get_style_diff(style_dict, base_style_dict):
     """Compares a style dict to a base and returns only the changed values."""
