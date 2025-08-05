@@ -1,3 +1,4 @@
+# --- MODIFIED: QCheckBox is no longer needed. ---
 from PyQt5.QtWidgets import ( QGraphicsScene, QSizePolicy, QGraphicsPixmapItem, QGraphicsEllipseItem,
                              QGraphicsTextItem, QScrollArea, QGraphicsItem, QGraphicsRectItem, QGraphicsView, QGraphicsDropShadowEffect, QTextEdit, QRubberBand)
 from PyQt5.QtCore import Qt, pyqtSignal, QRectF, QPointF, QObject, QPoint, QRect, QSize, QTimer
@@ -9,6 +10,8 @@ class ResizableImageLabel(QGraphicsView):
     textBoxDeleted = pyqtSignal(object)
     textBoxSelected = pyqtSignal(object, object, bool)
     manual_area_selected = pyqtSignal(QRectF, object)
+    # --- NEW: Signal for stitch selection ---
+    stitching_selection_changed = pyqtSignal(object, bool)
 
     def __init__(self, pixmap, filename):
         super().__init__()
@@ -34,7 +37,19 @@ class ResizableImageLabel(QGraphicsView):
 
         self.setCursor(Qt.ArrowCursor)
 
-    # --- *** MODIFIED: Method signature now accepts main_window *** ---
+        # --- MODIFIED: Stitching selection state management ---
+        # The QCheckBox is removed. We use internal flags instead.
+        self._is_stitching_mode_active = False
+        self._is_selected_for_stitching = False
+
+        self.selection_overlay = QGraphicsRectItem()
+        self.selection_overlay.setBrush(QColor(70, 130, 180, 100)) # SteelBlue, semi-transparent
+        self.selection_overlay.setPen(QPen(Qt.NoPen))
+        self.selection_overlay.setZValue(1000) # High Z-value to be on top of everything
+        self.selection_overlay.hide()
+        self.scene().addItem(self.selection_overlay)
+
+    # ... (apply_translation method is unchanged) ...
     def apply_translation(self, main_window, text_entries_by_row, default_style):
         """
         Applies text and styles to the image.
@@ -66,7 +81,7 @@ class ResizableImageLabel(QGraphicsView):
         existing_rows_after_removal = {tb.row_number for tb in self.text_boxes}
         for row_number, entry in current_entries.items():
             if row_number not in existing_rows_after_removal:
-                coords = entry.get('coordinates')
+                coords = entry.get('coordinates') or entry.get('bbox')
                 if not coords: continue
                 try:
                     x = min(p[0] for p in coords); y = min(p[1] for p in coords)
@@ -92,17 +107,60 @@ class ResizableImageLabel(QGraphicsView):
 
         QTimer.singleShot(0, self.update_view_transform)
 
+    # --- MODIFIED: Stitching selection methods ---
+
+    def enable_stitching_selection(self, enabled):
+        """Activates or deactivates the click-to-select mode for stitching."""
+        self._is_stitching_mode_active = enabled
+        if enabled:
+            # Change cursor to indicate the image is clickable
+            self.setCursor(Qt.PointingHandCursor)
+        else:
+            # De-select the image if it was selected and reset cursor
+            self._set_selected_for_stitching(False)
+            self.setCursor(Qt.ArrowCursor)
+
+    def _set_selected_for_stitching(self, selected):
+        """Internal helper to manage the selection state and visuals."""
+        if self._is_selected_for_stitching == selected:
+            return # No change
+            
+        self._is_selected_for_stitching = selected
+        if self._is_selected_for_stitching:
+            self.selection_overlay.setRect(self.scene().sceneRect())
+            self.selection_overlay.show()
+        else:
+            self.selection_overlay.hide()
+            
+        # Notify the handler about the change
+        self.stitching_selection_changed.emit(self, self._is_selected_for_stitching)
+
+    # --- REMOVED: _on_checkbox_state_changed is no longer needed. ---
+
     def set_manual_selection_enabled(self, enabled):
         self._is_manual_select_active = enabled
         if enabled:
             if not self._is_selection_active: self.setCursor(Qt.CrossCursor)
         else:
-            if not self._is_selection_active: self.setCursor(Qt.ArrowCursor)
+            # Only reset to arrow if not in stitching mode
+            if not self._is_stitching_mode_active:
+                self.setCursor(Qt.ArrowCursor)
 
+    # --- MODIFIED: mousePressEvent now handles stitching selection ---
     def mousePressEvent(self, event):
+        # If in stitching mode, a click toggles selection.
+        if self._is_stitching_mode_active:
+            if event.button() == Qt.LeftButton:
+                # Toggle the selection state
+                self._set_selected_for_stitching(not self._is_selected_for_stitching)
+                event.accept()
+                return # Consume the event and do nothing else
+
+        # If not in stitching mode, proceed with existing logic (manual OCR, etc.)
         if not self._is_manual_select_active or self._is_selection_active:
             super().mousePressEvent(event)
             return
+
         if event.button() == Qt.LeftButton:
             self._rubber_band_origin = event.pos()
             if not self._rubber_band:
@@ -113,6 +171,7 @@ class ResizableImageLabel(QGraphicsView):
         else:
             super().mousePressEvent(event)
 
+    # ... (rest of the file is unchanged) ...
     def mouseReleaseEvent(self, event):
         if self._is_manual_select_active and self._rubber_band and event.button() == Qt.LeftButton and not self._rubber_band_origin.isNull():
             final_rect_viewport = self._rubber_band.geometry()
@@ -256,6 +315,7 @@ class ResizableImageLabel(QGraphicsView):
             self.textBoxDeleted.disconnect()
             self.textBoxSelected.disconnect()
             self.manual_area_selected.disconnect()
+            self.stitching_selection_changed.disconnect()
         except TypeError: pass
         except RuntimeError: pass
         if self.scene():

@@ -1,26 +1,32 @@
 from PyQt5.QtWidgets import QWidget, QHBoxLayout, QLabel, QPushButton
 from PyQt5.QtCore import Qt, QPoint, QObject, QEvent, QRect
-from PyQt5.QtGui import QCursor # CORRECTED: Import QCursor
+from PyQt5.QtGui import QCursor
 import qtawesome
 
-## ADDED: A custom title bar widget ##
+# MODIFIED: Import MenuBar and the new TitleBarState enum
+from app.ui_widget import MenuBar, TitleBarState
+
 class CustomTitleBar(QWidget):
     def __init__(self, parent):
         super().__init__(parent)
         self.parent = parent
         self.layout = QHBoxLayout()
-        self.layout.setContentsMargins(5, 0, 5, 0)
+        self.layout.setContentsMargins(0, 0, 0, 0)
         self.layout.setSpacing(0)
 
         self.title = QLabel("ManhwaOCR")
         self.title.setFixedHeight(35)
-        self.title.setAlignment(Qt.AlignCenter)
+        self.title.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
         self.title.setStyleSheet("""
-            background-color: #2B2B2B;
+            background-color: #1E1E1E;
             color: white;
             font-weight: bold;
             padding-left: 10px;
         """)
+
+        # MODIFIED: MenuBar is no longer created here directly.
+        # It will be managed by the setState method.
+        self.menu_bar = None
 
         btn_size = 35
         icon_color = "#AAAAAA"
@@ -32,7 +38,7 @@ class CustomTitleBar(QWidget):
         self.btn_minimize = QPushButton()
 
         # Set icons using qtawesome
-        self.icon_close = qtawesome.icon('fa.times', color=icon_color, color_active=icon_hover_color)
+        self.icon_close = qtawesome.icon('mdi.close', color=icon_color, color_active=icon_hover_color)
         self.icon_minimize = qtawesome.icon('msc.chrome-minimize', color=icon_color, color_active=icon_hover_color)
         self.icon_maximize = qtawesome.icon('msc.chrome-maximize', color=icon_color, color_active=icon_hover_color)
         self.icon_restore = qtawesome.icon('msc.chrome-restore', color=icon_color, color_active=icon_hover_color)
@@ -51,27 +57,53 @@ class CustomTitleBar(QWidget):
         self.btn_maximize.setFixedSize(btn_size, btn_size)
         self.btn_minimize.setFixedSize(btn_size, btn_size)
 
-        # Common style for buttons, specific hover colors for background
-        # Note: Icon color is handled by qtawesome's `color_active` parameter
         button_style = """
             QPushButton {
-                background-color: transparent;
+                background-color: #1E1E1E;
                 border: none;
+                border-radius: 0px;
             }
         """
         self.btn_close.setStyleSheet(button_style + "QPushButton:hover { background-color: #E81123; }")
         self.btn_maximize.setStyleSheet(button_style + "QPushButton:hover { background-color: #3E3E3E; }")
         self.btn_minimize.setStyleSheet(button_style + "QPushButton:hover { background-color: #3E3E3E; }")
 
+        # MODIFIED: Layout assembly changed to accommodate dynamic MenuBar
         self.layout.addWidget(self.title)
+        # The MenuBar will be inserted at index 1 by setState, before the stretch
+        self.layout.addStretch() 
         self.layout.addWidget(self.btn_minimize)
         self.layout.addWidget(self.btn_maximize)
         self.layout.addWidget(self.btn_close)
 
         self.setLayout(self.layout)
 
+        # ADDED: Set the default state. This creates the HOME-style menu bar.
+        self.setState(TitleBarState.HOME)
+
         self.start = QPoint(0, 0)
         self.pressing = False
+
+    # ADDED: Method to set the state and configure the menu bar accordingly.
+    def setState(self, state):
+        """
+        Configures the title bar's appearance and functionality based on the window's context.
+        This is the primary method for controlling the menu bar.
+        """
+        # 1. Remove the existing menu bar, if any, to ensure a clean state.
+        if self.menu_bar:
+            self.layout.removeWidget(self.menu_bar)
+            self.menu_bar.deleteLater()
+            self.menu_bar = None
+        
+        # 2. For NON_MAIN state, we don't want a menu bar at all. We're done.
+        if state == TitleBarState.NON_MAIN:
+            return
+
+        # 3. For HOME and MAIN_WINDOW, create a new MenuBar with the correct state.
+        self.menu_bar = MenuBar(self.parent, state)
+        # Insert the menu bar into the layout after the title (index 1).
+        self.layout.insertWidget(1, self.menu_bar)
 
     def toggle_maximize_restore(self):
         if self.parent.isMaximized():
@@ -87,19 +119,12 @@ class CustomTitleBar(QWidget):
             self.btn_maximize.setIcon(self.icon_maximize)
 
     def mousePressEvent(self, event):
-        # CORRECTED: Prioritize resize over move.
-        # The WindowResizer uses a margin to detect resize events. We must prevent
-        # the title bar from initiating a move when the cursor is in this margin.
-        RESIZE_MARGIN = 5  # This value must match the `margin` in WindowResizer.
+        RESIZE_MARGIN = 5 
         child = self.childAt(event.pos())
 
-        # Condition to start moving the window
         should_move = (
             event.button() == Qt.LeftButton and
-            # a) Click was on the title bar background, not a button
             (not child or child is self.title) and
-            # b) EITHER the window is maximized (no resize) OR the click was
-            #    outside the top resize margin.
             (self.parent.isMaximized() or event.y() >= RESIZE_MARGIN)
         )
 
@@ -107,20 +132,14 @@ class CustomTitleBar(QWidget):
             self.start = self.mapToGlobal(event.pos())
             self.pressing = True
         else:
-            # If the conditions to move are not met (e.g., right-click, click on
-            # a button, or click in the resize margin), pass the event to the
-            # base class for default handling.
             super().mousePressEvent(event)
-
 
     def mouseMoveEvent(self, event):
         if self.pressing:
             end = self.mapToGlobal(event.pos())
             movement = end - self.start
 
-            # CORRECTED: Handle dragging from a maximized state
             if self.parent.isMaximized():
-                # When dragging from maximized, restore the window and position it correctly
                 norm_geom = self.parent.normalGeometry()
                 rel_pos_on_title = event.pos().x() / self.width()
                 
@@ -133,18 +152,15 @@ class CustomTitleBar(QWidget):
                 self.start = self.mapToGlobal(event.pos())
                 return
 
-            # CORRECTED: Use parent.move() for correct drag behavior
             self.parent.move(self.parent.pos() + movement)
             self.start = end
         else:
-            # CORRECTED: Pass event to parent to handle resizing cursors
             super().mouseMoveEvent(event)
 
     def mouseReleaseEvent(self, event):
         self.pressing = False
         super().mouseReleaseEvent(event)
 
-## ADDED: A class to handle window resizing for a frameless window ##
 class WindowResizer(QObject):
     def __init__(self, window):
         super().__init__(window)
@@ -160,17 +176,13 @@ class WindowResizer(QObject):
         self.window.installEventFilter(self)
 
     def eventFilter(self, obj, event):
-        # We only care about mouse events for the main window object.
         if obj is not self.window or event.type() not in [QEvent.MouseMove, QEvent.MouseButtonPress, QEvent.MouseButtonRelease, QEvent.HoverMove]:
             return super().eventFilter(obj, event)
 
-        # CORRECTED: Use QCursor.pos() which works for all mouse-related events,
-        # including QHoverEvent which does not have a .globalPos() method.
         global_pos = QCursor.pos()
         pos_in_window = self.window.mapFromGlobal(global_pos)
 
         if event.type() == QEvent.MouseButtonPress and event.button() == Qt.LeftButton:
-            # Don't start resize if window is maximized
             if not self.window.isMaximized() and self._check_edges(pos_in_window):
                 self.resizing = True
                 self.start_pos = global_pos
@@ -203,7 +215,6 @@ class WindowResizer(QObject):
 
     def _update_cursor(self, pos):
         """Update the cursor icon based on the mouse position over the edges."""
-        # Do not show resize cursor when maximized or during a resize
         if self.window.isMaximized() or self.resizing:
             self.window.unsetCursor()
             return
@@ -214,7 +225,6 @@ class WindowResizer(QObject):
         on_left = pos.x() < self.margin
         on_right = pos.x() > rect.right() - self.margin
 
-        # Set cursor for corners and edges
         if (on_top and on_left) or (on_bottom and on_right):
             self.window.setCursor(Qt.SizeFDiagCursor)
         elif (on_top and on_right) or (on_bottom and on_left):
@@ -236,28 +246,24 @@ class WindowResizer(QObject):
 
         if self.resize_edges.get('left'):
             new_left = start_rect.left() + delta.x()
-            # Clamp to the right edge if width is less than minimum
             if start_rect.width() - delta.x() < min_size.width():
                 new_left = start_rect.right() - min_size.width()
             new_rect.setLeft(new_left)
 
         if self.resize_edges.get('right'):
             new_right = start_rect.right() + delta.x()
-            # Clamp to the left edge if width is less than minimum
             if start_rect.width() + delta.x() < min_size.width():
                 new_right = start_rect.left() + min_size.width()
             new_rect.setRight(new_right)
 
         if self.resize_edges.get('top'):
             new_top = start_rect.top() + delta.y()
-            # Clamp to the bottom edge if height is less than minimum
             if start_rect.height() - delta.y() < min_size.height():
                 new_top = start_rect.bottom() - min_size.height()
             new_rect.setTop(new_top)
 
         if self.resize_edges.get('bottom'):
             new_bottom = start_rect.bottom() + delta.y()
-            # Clamp to the top edge if height is less than minimum
             if start_rect.height() + delta.y() < min_size.height():
                 new_bottom = start_rect.top() + min_size.height()
             new_rect.setBottom(new_bottom)

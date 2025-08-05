@@ -1,11 +1,10 @@
 ## what i need
 
 ### done (0.4.20 milestone)
-- 
+- stitch images
 
 ### currently in progress
 - splitting images
-- stitch images
 
 ### not yet started
 - rework how gradient work
@@ -16,3 +15,5 @@
 -  export :
     - dialog where to save
     - default name the same as project.
+- hide textboximage
+- create loading splash screen

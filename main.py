@@ -9,6 +9,7 @@ from assets.styles import (HOME_STYLES, HOME_LEFT_LAYOUT_STYLES)
 from app.chrome import CustomTitleBar, WindowResizer
 import os, zipfile, tempfile
 from shutil import rmtree
+from app.ui_widget import TitleBarState
 
 # Keep your existing ImportWFWFDialog and NewProjectDialog classes as they are
 class ProjectItemWidget(QFrame):
@@ -194,14 +195,6 @@ class Home(QMainWindow):
         # ## MODIFIED: Layout structure for frameless window ##
         # Main container widget
         self.container = QFrame()
-        self.container.setObjectName("container")
-        self.container.setStyleSheet("""
-            #container {{
-                background-color: #1D1D1D;
-                border-radius: 8px; /* Optional: for rounded corners */
-                border: 1px solid #3E3E3E;
-            }}
-        """)
 
         # Main vertical layout
         self.main_layout = QVBoxLayout(self.container)
@@ -211,6 +204,7 @@ class Home(QMainWindow):
         # Add custom title bar
         self.title_bar = CustomTitleBar(self)
         self.main_layout.addWidget(self.title_bar)
+        self.title_bar.setState(TitleBarState.HOME)
 
         # Set the dark theme
         self.setStyleSheet(HOME_STYLES)

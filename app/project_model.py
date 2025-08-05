@@ -16,6 +16,7 @@ class ProjectData:
     ocr_results: list[dict] = field(default_factory=list)
     profiles: set[str] = field(default_factory=set)
     original_language: str = "Korean"
+    active_profile_name: str = "Original"
     next_global_row_number: int = 0
 
 class ProjectLoader:
@@ -54,7 +55,18 @@ class ProjectLoader:
             # 3. Load meta.json (project metadata)
             meta_path = os.path.join(temp_dir, 'meta.json')
             if os.path.exists(meta_path):
-                data.original_language = self._load_meta_json(meta_path)
+                meta_data = self._load_meta_json(meta_path)
+                data.original_language = meta_data.get('original_language', 'Korean')
+                
+                # If the saved active profile exists in the list of loaded profiles, use it.
+                # Otherwise, default to "Original" to prevent errors.
+                saved_profile = meta_data.get('active_profile_name', 'Original')
+                if saved_profile in data.profiles:
+                    data.active_profile_name = saved_profile
+                else:
+                    data.active_profile_name = "Original"
+                    print(f"Warning: Saved active profile '{saved_profile}' not found in project. Defaulting to 'Original'.")
+
 
             return data
 
@@ -87,8 +99,8 @@ class ProjectLoader:
         next_global_row_number = max_row_num + 1
         return ocr_results, next_global_row_number, profiles
 
-    def _load_meta_json(self, path: str):
-        """Loads and processes the meta.json file."""
+    def _load_meta_json(self, path: str) -> dict:
+        """Loads and processes the meta.json file, returning its contents as a dictionary."""
         with open(path, 'r', encoding='utf-8') as f:
             meta = json.load(f)
-        return meta.get('original_language', 'Korean')
+        return meta

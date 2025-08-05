@@ -6,7 +6,8 @@ from PyQt5.QtGui import QPixmap, QKeySequence, QColor
 import qtawesome as qta
 from utils.file_io import export_ocr_results, import_translation_file, export_rendered_images
 from app import (ResizableImageLabel, CustomProgressBar, MenuBar, CustomScrollArea, ResultsWidget, TextBoxStylePanel, 
-                 FindReplaceWidget, ImportExportMenu, SaveMenu, BatchOCRHandler, ProjectLoader, ManualOCRHandler )
+                 FindReplaceWidget, ImportExportMenu, SaveMenu, BatchOCRHandler, ProjectLoader, ManualOCRHandler, ActionMenu,
+                 StitchHandler) # --- MODIFIED: Import StitchHandler ---
 from utils.settings import SettingsDialog
 from core.translations import import_translation_file_content
 from core.translation_wndow import TranslationWindow
@@ -54,6 +55,7 @@ class MainWindow(QMainWindow):
         self.combine_action.triggered.connect(self.results_widget.combine_selected_rows)
 
         self.manual_ocr_handler = ManualOCRHandler(self)
+        self.stitch_handler = StitchHandler(self) # --- NEW: Instantiate StitchHandler ---
 
         self.current_image = None
         self.ocr_results = []
@@ -121,6 +123,9 @@ class MainWindow(QMainWindow):
         # --- MODIFIED: CustomScrollArea is now self-contained ---
         self.scroll_area = CustomScrollArea(self)
         self.scroll_area.save_requested.connect(self.show_save_menu)
+        self.scroll_area.action_menu_requested.connect(self.show_action_menu)
+        # --- NEW: Connection for stitch handler UI positioning ---
+        self.scroll_area.resized.connect(lambda: self.stitch_handler._update_widget_position() if self.stitch_handler.is_active else None)
 
         self.scroll_content = QWidget()
         self.scroll_content.setStyleSheet("background-color: transparent;")
@@ -268,15 +273,41 @@ class MainWindow(QMainWindow):
         menu.save_project_requested.connect(self.save_project)
         menu.save_images_requested.connect(self.export_manhwa)
 
-        # Position the menu. We want to align its top-right corner
-        # with the bottom-right corner of the button that triggered it.
-        button_pos = button.mapToGlobal(button.rect().bottomRight())
+        # Get the global position of the button's top-right corner.
+        button_pos = button.mapToGlobal(button.rect().topRight())
         
-        # Move the menu's top-left corner to (button_x - menu_width, button_y)
-        menu_pos = QPoint(button_pos.x() - menu.width(), button_pos.y())
+        # Calculate the menu's top-left position so its bottom-right corner
+        # aligns with the button's top-right corner.
+        menu_pos = QPoint(button_pos.x() - menu.width(), button_pos.y() - menu.height())
         menu.move(menu_pos)
         
         menu.show()
+
+    def show_action_menu(self, button):
+        """Creates and shows the ActionMenu popup, positioned relative to the provided button."""
+        menu = ActionMenu(self)
+        menu.hide_text_requested.connect(self.hide_text)
+        menu.split_images_requested.connect(self.split_images)
+        menu.stitch_images_requested.connect(self.stitch_images)
+
+        # Get the global position of the button's top-left corner.
+        button_pos = button.mapToGlobal(button.rect().topLeft())
+        
+        # Calculate the menu's top-left position.
+        # X: Align the menu's left edge with the button's left edge.
+        # Y: Position the menu's bottom edge at the button's top edge (button_y - menu_height).
+        menu_pos = QPoint(button_pos.x(), button_pos.y() - menu.height())
+        menu.move(menu_pos)
+        
+        menu.show()
+    
+    def hide_text(self):
+        return
+    def split_images(self):
+        return
+    def stitch_images(self):
+        # --- MODIFIED: Delegate to the handler ---
+        self.stitch_handler.start_stitching_mode()
 
     def update_profile_selector(self):
         """Syncs the profile dropdown with the self.profiles dictionary."""
@@ -346,7 +377,7 @@ class MainWindow(QMainWindow):
         self.profiles = {name: {} for name in project_data.profiles} # Convert set to dict format
         self.original_language = project_data.original_language
         self.next_global_row_number = project_data.next_global_row_number
-        self.active_profile_name = "Original"
+        self.active_profile_name = project_data.active_profile_name
 
         # Update UI elements
         self.setWindowTitle(f"{project_data.project_name} | ManhwaOCR")
@@ -957,12 +988,24 @@ class MainWindow(QMainWindow):
         if not self.mmtl_path or not self.temp_dir:
             QMessageBox.warning(self, "Warning", "No project loaded or temporary directory missing. Cannot save.")
             return
-        master_path = os.path.join(self.temp_dir, 'master.json')
+        
         try:
+            # Save master JSON file
+            master_path = os.path.join(self.temp_dir, 'master.json')
             self._sort_ocr_results()
             with open(master_path, 'w', encoding='utf-8') as f:
-                # The 'translations' dict is now part of ocr_results, so it's saved automatically
                 json.dump(self.ocr_results, f, indent=2, ensure_ascii=False)
+
+            # Save metadata (including the active profile)
+            meta_path = os.path.join(self.temp_dir, 'meta.json')
+            meta_data = {
+                'original_language': self.original_language,
+                'active_profile_name': self.active_profile_name
+            }
+            with open(meta_path, 'w', encoding='utf-8') as f:
+                json.dump(meta_data, f, indent=2, ensure_ascii=False)
+
+            # Create the final zip archive
             with zipfile.ZipFile(self.mmtl_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
                 for root, dirs, files in os.walk(self.temp_dir):
                     files = [f for f in files if not f.endswith(('.tmp', '.bak'))]
@@ -971,7 +1014,9 @@ class MainWindow(QMainWindow):
                         full_path = os.path.join(root, file)
                         rel_path = os.path.relpath(full_path, self.temp_dir).replace(os.sep, '/')
                         zipf.write(full_path, rel_path)
+            
             QMessageBox.information(self, "Saved", f"Project saved successfully to\n{self.mmtl_path}")
+
         except Exception as e:
              print(f"Save Error: {e}")
              traceback.print_exc()

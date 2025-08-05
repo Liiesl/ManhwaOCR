@@ -271,6 +271,10 @@ class CustomScrollArea(QScrollArea):
     # It passes the button widget itself, which the main window uses to
     # position the save menu correctly.
     save_requested = pyqtSignal(QWidget)
+    # This signal is emitted when the "Actions" menu button is clicked,
+    # passing the button to allow for correct menu positioning.
+    action_menu_requested = pyqtSignal(QWidget)
+    resized = pyqtSignal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -297,6 +301,13 @@ class CustomScrollArea(QScrollArea):
         btn_scroll_top.setStyleSheet(IV_BUTTON_STYLES)
         layout.addWidget(btn_scroll_top)
 
+        # Action Menu Button (newly added)
+        btn_action_menu = QPushButton(qta.icon('fa5s.bars', color='white'), "")
+        btn_action_menu.setFixedSize(50, 50)
+        btn_action_menu.clicked.connect(lambda: self.action_menu_requested.emit(btn_action_menu))
+        btn_action_menu.setStyleSheet(IV_BUTTON_STYLES)
+        layout.addWidget(btn_action_menu)
+
         # Save Menu Button
         btn_save_menu = QPushButton(qta.icon('fa5s.save', color='white'), "Save")
         btn_save_menu.setFixedSize(120, 50)
@@ -319,6 +330,7 @@ class CustomScrollArea(QScrollArea):
         """
         super().resizeEvent(event)
         self.update_overlay_position()
+        self.resized.emit()
 
     def update_overlay_position(self):
         """
@@ -326,8 +338,9 @@ class CustomScrollArea(QScrollArea):
         scroll area's viewport and moves it there.
         """
         if self.overlay_widget:
-            # Using original hardcoded values for visual consistency
-            overlay_width = 300
+            # Increased width to accommodate the new button
+            # 50(up) + 50(actions) + 120(save) + 50(down) + spacing + margins = ~295px. 320px gives good padding.
+            overlay_width = 320
             overlay_height = 60
             
             # Use viewport size for positioning relative to the visible area
