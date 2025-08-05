@@ -5,6 +5,7 @@
 
 ### currently in progress
 - splitting images
+- major folder layout refactoring
 
 ### not yet started
 - rework how gradient work
