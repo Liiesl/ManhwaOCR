@@ -3,7 +3,7 @@ from PyQt5.QtWidgets import (QApplication, QWidget, QVBoxLayout, QPushButton,  Q
                              QScrollArea, QHBoxLayout, QDialog)
 # MODIFIED: Added QEvent for the changeEvent handler
 from PyQt5.QtCore import Qt, QSettings, QDateTime, QThread, pyqtSignal, QEvent
-from utils.project_processing import new_project, open_project, import_from_wfwf, correct_filenames
+from src.manhwa_ocr.utils import new_project, open_project, import_from_wfwf, correct_filenames
 from assets.styles import (HOME_STYLES, HOME_LEFT_LAYOUT_STYLES)
 # MODIFIED: Import CustomTitleBar and WindowResizer from the new chrome.py file
 from app.chrome import CustomTitleBar, WindowResizer

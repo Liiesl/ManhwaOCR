@@ -4,8 +4,8 @@ from PyQt5.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel, QLineEdi
 from PyQt5.QtCore import (Qt, pyqtSignal, pyqtSlot, QSize, QPoint, QRegularExpression, QSettings)
 from PyQt5.QtGui import (QColor, QPixmap, QPainter, QRegularExpressionValidator, QIcon, QRegion)
 # Import the new modular widgets from the helper file
-from .Helper1 import HueRing, ColorSquare, CheckerboardWidget, EyedropperHelper, ColorSlidersWidget
-from .ColorDialogStyles import CUSTOM_COLOR_DIALOG_V2_STYLESHEET
+from app.ui.dialogs.BetterColorDialog.Helper1 import HueRing, ColorSquare, CheckerboardWidget, EyedropperHelper, ColorSlidersWidget
+from app.ui.dialogs.BetterColorDialog.ColorDialogStyles import CUSTOM_COLOR_DIALOG_V2_STYLESHEET
 
 class CustomColorDialog(QDialog):
     """

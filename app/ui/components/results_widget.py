@@ -2,12 +2,11 @@
 
 from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QFrame, QScrollArea, QStackedWidget,
                              QCheckBox, QPushButton, QTableWidget, QTableWidgetItem, QMessageBox, QHeaderView,
-                             QTextEdit, QAbstractItemView)
+                             QTextEdit, QAbstractItemView, QStyledItemDelegate)
 from PyQt5.QtCore import Qt, pyqtSignal, QEvent
 import qtawesome as qta
 import math
 
-from app.ui_widget import TextEditDelegate
 from assets.styles import (ADVANCED_CHECK_STYLES, SIMPLE_VIEW_STYLES, DELETE_ROW_STYLES)
 
 class ResultsWidget(QWidget):
@@ -394,3 +393,29 @@ class ResultsWidget(QWidget):
             min_confidence,
             rows_to_delete
         )
+
+class TextEditDelegate(QStyledItemDelegate):
+    def createEditor(self, parent, option, index):
+        editor = QTextEdit(parent)
+        editor.setAcceptRichText(False)
+        editor.setLineWrapMode(QTextEdit.WidgetWidth) # Use WidgetWidth for auto-wrap
+        # editor.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff) # Optional: hide scrollbar in editor
+        return editor
+
+    def setEditorData(self, editor, index):
+        text = index.model().data(index, Qt.DisplayRole)
+        editor.setPlainText(text)
+
+    def setModelData(self, editor, model, index):
+        model.setData(index, editor.toPlainText(), Qt.EditRole)
+
+    def updateEditorGeometry(self, editor, option, index):
+        # Provide sufficient height based on content or use table row height
+        editor.setGeometry(option.rect)
+
+    # Optional: Adjust size hint for better row height calculation
+    def sizeHint(self, option, index):
+        size = super().sizeHint(option, index)
+        # Consider calculating height based on text content if needed
+        # For simplicity, rely on adjust_row_heights in MainWindow for now
+        return size

@@ -1,7 +1,7 @@
 # --- START OF FILE ocr_processor.py ---
 
 from PyQt5.QtCore import QThread, pyqtSignal
-import easyocr, os
+import os
 import numpy as np
 from PIL import Image, ImageEnhance # Added ImageEnhance
 import traceback
