@@ -6,7 +6,7 @@ from PyQt5.QtCore import Qt, QSettings, QDateTime, QThread, pyqtSignal, QEvent
 from app.utils import new_project, open_project, import_from_wfwf, correct_filenames
 from assets.styles import (HOME_STYLES, HOME_LEFT_LAYOUT_STYLES)
 # MODIFIED: Import CustomTitleBar and WindowResizer from the new chrome.py file
-from app.ui import CustomTitleBar, WindowResizer
+from app.ui.window import CustomTitleBar, WindowResizer
 import os, zipfile, tempfile
 from shutil import rmtree
 from app.ui.widgets import TitleBarState

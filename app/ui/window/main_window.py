@@ -4,12 +4,11 @@ from PyQt5.QtCore import Qt, QSettings, QPoint
 from PyQt5.QtGui import QPixmap, QKeySequence, QColor
 import qtawesome as qta
 from app.utils.file_io import export_ocr_results, import_translation_file, export_rendered_images
-from app.ui.components import ( ResizableImageLabel, CustomScrollArea, ResultsWidget, TextBoxStylePanel, FindReplaceWidget, 
-                               ImportExportMenu, SaveMenu, ActionMenu)
-from app.ui.widgets import CustomProgressBar, MenuBar 
-from app.ui.handlers import BatchOCRHandler, ManualOCRHandler, StitchHandler 
+from app.ui.components import ResizableImageLabel, CustomScrollArea, ResultsWidget, TextBoxStylePanel, FindReplaceWidget
+from app.ui.widgets import CustomProgressBar, MenuBar, ImportExportMenu, SaveMenu, ActionMenu
+from app.handlers import BatchOCRHandler, ManualOCRHandler, StitchHandler 
 # --- MODIFIED IMPORT ---
-from app.ui import ProjectModel
+from app.core import ProjectModel
 from app.ui.dialogs import SettingsDialog
 from app.ui.window.translation_window import TranslationWindow
 from assets import (COLORS, MAIN_STYLESHEET, IV_BUTTON_STYLES, ADVANCED_CHECK_STYLES, RIGHT_WIDGET_STYLES,

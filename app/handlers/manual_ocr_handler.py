@@ -7,7 +7,7 @@ from PIL import Image
 
 from PyQt5.QtWidgets import QMessageBox
 from PyQt5.QtCore import QPoint, QBuffer
-from app.core.data_processing import group_and_merge_text
+from app.utils.data_processing import group_and_merge_text
 from app.ui.components import ResizableImageLabel
 
 class ManualOCRHandler:

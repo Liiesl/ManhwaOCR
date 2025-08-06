@@ -2,7 +2,7 @@
 from PyQt5.QtWidgets import QGraphicsScene, QSizePolicy, QGraphicsRectItem, QGraphicsView, QRubberBand
 from PyQt5.QtCore import Qt, pyqtSignal, QRectF, QPoint, QRect, QSize, QTimer
 from PyQt5.QtGui import QPainter, QColor, QPen
-from app.ui.components.images.image_area_widgets import TextBoxItem
+from app.ui.components.image_area.textbox import TextBoxItem
 
 class ResizableImageLabel(QGraphicsView):
     # Signals remain the same

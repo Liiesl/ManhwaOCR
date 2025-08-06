@@ -1,7 +1,7 @@
 import os, gc
 from PyQt5.QtCore import QObject, pyqtSignal
 from app.core.ocr_processor import OCRProcessor
-from app.ui.project_model import ProjectModel
+from app.core.project_model import ProjectModel
 from app.ui.widgets import CustomProgressBar # Import the progress bar
 
 class BatchOCRHandler(QObject):
