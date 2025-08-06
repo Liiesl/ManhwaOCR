@@ -3,13 +3,14 @@ from PyQt5.QtWidgets import (QApplication, QWidget, QVBoxLayout, QPushButton,  Q
                              QScrollArea, QHBoxLayout, QDialog)
 # MODIFIED: Added QEvent for the changeEvent handler
 from PyQt5.QtCore import Qt, QSettings, QDateTime, QThread, pyqtSignal, QEvent
-from utils.project_processing import new_project, open_project, import_from_wfwf, correct_filenames
+from app.utils import new_project, open_project, import_from_wfwf, correct_filenames
 from assets.styles import (HOME_STYLES, HOME_LEFT_LAYOUT_STYLES)
 # MODIFIED: Import CustomTitleBar and WindowResizer from the new chrome.py file
-from app.chrome import CustomTitleBar, WindowResizer
+from app.ui.window import CustomTitleBar, WindowResizer
 import os, zipfile, tempfile
 from shutil import rmtree
-from app.ui_widget import TitleBarState
+from app.ui.widgets import TitleBarState
+import traceback
 
 # Keep your existing ImportWFWFDialog and NewProjectDialog classes as they are
 class ProjectItemWidget(QFrame):
@@ -370,7 +371,7 @@ class Home(QMainWindow):
 
     def handle_project_loaded(self, mmtl_path, temp_dir):
         try:
-            from app.main_window import MainWindow
+            from app.ui.window import MainWindow
             self.update_recent_projects(mmtl_path)
             
             # Create main window
@@ -382,12 +383,14 @@ class Home(QMainWindow):
             
             self.close()
         except Exception as e:
+            traceback.print_exc()
             QMessageBox.critical(self, "Error", f"Failed to launch project: {str(e)}")
             rmtree(temp_dir, ignore_errors=True)
 
     def handle_project_error(self, error_msg):
         self.loading_dialog.close()
         QMessageBox.critical(self, "Error", f"Failed to open project:\n{error_msg}")
+        print(f"Error loading project: {error_msg}")
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)

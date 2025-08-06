@@ -1,5 +1,30 @@
-
 from assets.styles import COLORS
+
+MENU_STYLES = f"""
+            QWidget {{
+                background-color: {COLORS['primary']};
+                border: 1px solid {COLORS['border']};
+                border-radius: 5px;
+                padding: 5px;
+            }}
+            QPushButton {{
+                background-color: {COLORS['secondary']};
+                color: {COLORS['text']};
+                border: 1px solid {COLORS['border']};
+                padding: 10px 15px;
+                font-size: 14px;
+                text-align: left;
+                border-radius: 4px;
+                margin: 2px;
+            }}
+            QPushButton:hover {{
+                background-color: {COLORS['button_hover_bg']};
+                border: 1px solid {COLORS['border']};
+            }}
+            QPushButton:pressed {{
+                background-color: {COLORS['button_pressed']};
+            }}
+        """
 
 CHROMESTYLES = {
     # Styles for the CustomTitleBar widget
@@ -21,7 +46,6 @@ CHROMESTYLES = {
         'button_maximize_hover': f"QPushButton:hover {{ background-color: {COLORS['button_hover_bg']}; }}",
         'button_minimize_hover': f"QPushButton:hover {{ background-color: {COLORS['button_hover_bg']}; }}",
     },
-    # You can add more style groups here later, e.g., 'main_window', 'dialogs'
 }
 
 MANUALOCR_STYLES = """
