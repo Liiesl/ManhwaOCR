@@ -1,30 +1,30 @@
 import os, gc
 from PyQt5.QtCore import QObject, pyqtSignal
 from app.core.ocr_processor import OCRProcessor
-from app.ui.project_model import ProjectModel # Import the model
+from app.ui.project_model import ProjectModel
+from app.ui.widgets import CustomProgressBar # Import the progress bar
 
 class BatchOCRHandler(QObject):
     """
     Manages the entire batch OCR process for multiple images.
     This object lives in the main thread but orchestrates worker QThreads.
     """
-    batch_progress = pyqtSignal(int)      # Overall progress (0-100)
     # --- DELETED: This signal is no longer needed ---
-    # image_processed = pyqtSignal(list)
-    # --- MODIFIED: batch_finished no longer needs to carry all results ---
-    batch_finished = pyqtSignal(int)      # Emits final next row number when all images are done
-    error_occurred = pyqtSignal(str)      # Emits any critical error message
-    processing_stopped = pyqtSignal()     # Emits when the process is stopped by the user
+    # batch_progress = pyqtSignal(int)
+    batch_finished = pyqtSignal(int)
+    error_occurred = pyqtSignal(str)
+    processing_stopped = pyqtSignal()
 
-    # --- MODIFIED: Constructor now accepts the ProjectModel ---
-    def __init__(self, image_paths, reader, settings, starting_row_number, model: ProjectModel):
+    # --- MODIFIED: Constructor now accepts the ProjectModel and the progress bar ---
+    def __init__(self, image_paths, reader, settings, starting_row_number, model: ProjectModel, progress_bar: CustomProgressBar):
         super().__init__()
         self.image_paths = image_paths
         self.reader = reader
         self.settings = settings
         self.starting_row_number = starting_row_number
-        self.model = model # Store a reference to the data model
-        
+        self.model = model
+        self.progress_bar = progress_bar # Store a reference to the progress bar
+
         self.current_image_index = 0
         self.next_global_row_number = self.starting_row_number
         self._is_stopped = False
@@ -34,8 +34,10 @@ class BatchOCRHandler(QObject):
         """Starts the batch process."""
         print("Batch Handler: Starting processing...")
         self._is_stopped = False
+        # --- NEW: Directly control the progress bar ---
+        self.progress_bar.start_initial_progress()
         self._process_next_image()
-
+    
     # ... stop() and _process_next_image() remain the same ...
     def stop(self):
         """Requests the batch process to stop."""
@@ -73,18 +75,18 @@ class BatchOCRHandler(QObject):
         self.ocr_thread.ocr_finished.connect(self._handle_image_results)
         self.ocr_thread.error_occurred.connect(self._handle_image_error)
         self.ocr_thread.start()
-        
-    # ... _handle_image_progress() remains the same ...
+    # --- MODIFIED: This method now directly updates the progress bar ---
     def _handle_image_progress(self, progress):
-        """Calculates and emits the overall batch progress."""
+        """Calculates and updates the overall batch progress directly."""
         total_images = len(self.image_paths)
         if total_images == 0: return
         per_image_contribution = 80.0 / total_images
         current_image_progress = progress / 100.0
         overall_progress = 20 + (self.current_image_index * per_image_contribution) + (current_image_progress * per_image_contribution)
-        self.batch_progress.emit(int(overall_progress))
+        # --- UPDATE a widget directly instead of emitting a signal ---
+        self.progress_bar.update_target_progress(int(overall_progress))
 
-    # --- MODIFIED: This is the key change ---
+    # ... _handle_image_results() remains the same ...
     def _handle_image_results(self, processed_results):
         """Receives results from a single image, updates the model directly, and starts the next."""
         if self._is_stopped:
@@ -128,12 +130,11 @@ class BatchOCRHandler(QObject):
         self._is_stopped = True
         self.error_occurred.emit(message)
 
-    # --- MODIFIED: _finish_batch is now simpler ---
     def _finish_batch(self):
         """Cleans up and signals that the entire batch is complete."""
         print("Batch Handler: Finishing run.")
-        self.batch_progress.emit(100)
-        # Emit the final row number, no need to send the giant list of results.
+        # --- NEW: Directly set the progress bar to 100% ---
+        self.progress_bar.update_target_progress(100)
         self.batch_finished.emit(self.next_global_row_number)
         self.ocr_thread = None
         gc.collect()

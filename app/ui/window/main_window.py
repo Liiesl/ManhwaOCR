@@ -254,8 +254,6 @@ class MainWindow(QMainWindow):
         main_widget.setLayout(main_layout)
         self.setCentralWidget(main_widget)
 
-
-    # ... (show_*_menu methods are unchanged) ...
     def show_import_export_menu(self):
         """Creates and shows the ImportExportMenu popup."""
         menu = ImportExportMenu(self)
@@ -632,11 +630,11 @@ class MainWindow(QMainWindow):
 
         self.btn_process.setVisible(False)
         self.btn_stop_ocr.setVisible(True)
-        self.ocr_progress.start_initial_progress()
+        # --- REMOVED: The handler will now start the progress bar ---
+        # self.ocr_progress.start_initial_progress()
 
-        # DELEGATED: Tell the model to prepare for a new OCR run
         self.model.clear_standard_results()
-        self.on_model_updated(None) # Clear visuals of old results
+        self.on_model_updated(None)
         
         self._load_filter_settings()
         ocr_settings = {
@@ -646,22 +644,23 @@ class MainWindow(QMainWindow):
             "adjust_contrast": float(self.settings.value("ocr_adjust_contrast", 0.5)), "resize_threshold": int(self.settings.value("ocr_resize_threshold", 1024)),
         }
         
-        # The handler is now created here, given the model, and it will manage its own lifecycle.
+        # --- MODIFIED: Pass the progress bar widget directly to the handler ---
         self.batch_handler = BatchOCRHandler(
             image_paths=self.model.image_paths, 
             reader=self.reader, 
             settings=ocr_settings, 
             starting_row_number=self.model.next_global_row_number,
-            model=self.model # Pass the model directly to the handler
+            model=self.model,
+            progress_bar=self.ocr_progress # Pass the reference here
         )
-        # We only connect to signals that affect the UI directly.
-        self.batch_handler.batch_progress.connect(self.on_batch_progress_updated)
+
+        # --- REMOVED: The connection for batch_progress is no longer needed ---
+        # self.batch_handler.batch_progress.connect(self.on_batch_progress_updated)
         self.batch_handler.batch_finished.connect(self.on_batch_finished)
         self.batch_handler.error_occurred.connect(self.on_batch_error)
         self.batch_handler.processing_stopped.connect(self.on_batch_stopped)
         
         self.batch_handler.start_processing()
-
     def on_image_processed(self, new_results):
         """ DELEGATED: Adds new OCR results to the model. """
         # The model will emit a signal, and on_model_updated will handle the UI refresh.
@@ -674,12 +673,8 @@ class MainWindow(QMainWindow):
         self.model.next_global_row_number = next_row_number
         self.cleanup_ocr_session()
         QMessageBox.information(self, "Finished", "OCR processing completed for all images.")
-
-    # ... Other batch handler slots and cleanup logic are mostly unchanged) ...
-    def on_batch_progress_updated(self, progress):
-        """Updates the progress bar based on the handler's overall progress."""
-        self.ocr_progress.update_target_progress(progress)
     
+    # ... (rest of the file is the same) ...
     def on_batch_error(self, message):
         """Handles a critical error during the batch process."""
         print(f"MainWindow: Batch error received: {message}")
@@ -751,7 +746,6 @@ class MainWindow(QMainWindow):
         show_warning = self.settings.value("show_delete_warning", "true") == "true"
         proceed = True
         if show_warning:
-            # ... (QMessageBox logic is unchanged)
             msg = QMessageBox(self); msg.setIcon(QMessageBox.Warning)
             msg.setWindowTitle("Confirm Deletion Marking"); msg.setText("<b>Mark for Deletion Warning</b>")
             msg.setInformativeText("Mark this entry for deletion? It will be hidden and excluded from exports.")
@@ -794,7 +788,6 @@ class MainWindow(QMainWindow):
                     widget.apply_translation(self, results_for_this_image, DEFAULT_TEXT_STYLE)
 
     def start_translation(self):
-        # ... (unchanged, but reads from self.model.ocr_results) ...
         api_key = self.settings.value("gemini_api_key", "")
         if not api_key:
             QMessageBox.critical(self, "API Key Missing", "Please set your Gemini API key in Settings.")
@@ -804,7 +797,7 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "No Data", "There are no OCR results to translate.")
             return
             
-        model_name = self.settings.value("gemini_model", "gemini-1.5-flash-latest")
+        model_name = self.settings.value("gemini_model", "gemini-2.5-flash")
 
         dialog = TranslationWindow(
             api_key, model_name, self.model.ocr_results, list(self.model.profiles.keys()), self
@@ -861,7 +854,6 @@ class MainWindow(QMainWindow):
                 shutil.rmtree(self.model.temp_dir)
             except Exception as e:
                 print(f"Warning: Could not remove temporary directory {self.model.temp_dir}: {e}")
-        # ... (rest of closeEvent is unchanged) ...
         if self.ocr_processor and self.ocr_processor.isRunning():
             print("Stopping OCR processor on close...")
             self.ocr_processor.stop_requested = True
