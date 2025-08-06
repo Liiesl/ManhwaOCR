@@ -63,7 +63,7 @@ class ManualOCRHandler:
         if self.main_window.btn_manual_ocr.isChecked():
             self.main_window.btn_manual_ocr.setChecked(False)
         self.main_window.btn_manual_ocr.setText("Manual OCR")
-        self.main_window.btn_process.setEnabled(bool(self.main_window.image_paths))
+        self.main_window.btn_process.setEnabled(bool(self.main_window.model.image_paths))
         self._clear_selection_state()
         self._set_selection_enabled_on_all(False)
         print("Manual OCR mode cancelled.")
@@ -235,13 +235,13 @@ class ManualOCRHandler:
                     'confidence': merged_result['confidence'], 'filename': filename_actual,
                     'is_manual': True, 'row_number': new_row_number
                 }
-                self.main_window.ocr_results.append(final_result)
+                self.main_window.model.ocr_results.append(final_result)
                 any_change_made = True
                 print(f"Added final MERGED manual block: Row {new_row_number}, Text: '{merged_result['text'][:20]}...'")
 
             # 6. Sort Results & Update UI
             if any_change_made:
-                 self.main_window._sort_ocr_results()
+                 self.main_window.model._sort_ocr_results()
                  self.main_window.update_all_views(affected_filenames=[filename_actual])
                  QMessageBox.information(self.main_window, "Success", f"Added {len(merged_results_relative)} text block(s) from manual selection.")
 
@@ -263,7 +263,7 @@ class ManualOCRHandler:
             print(f"Error calculating sort key Y: {e}"); return float('inf')
 
         preceding_result = None
-        for res in self.main_window.ocr_results:
+        for res in self.main_window.model.ocr_results:
             if res.get('is_deleted', False): continue
             res_filename, res_coords = res.get('filename', ''), res.get('coordinates')
             res_row_number_raw = res.get('row_number')
@@ -284,7 +284,7 @@ class ManualOCRHandler:
             except (ValueError, TypeError): pass
 
         max_sub_index_for_base = 0
-        for res in self.main_window.ocr_results:
+        for res in self.main_window.model.ocr_results:
              current_row_num_raw = res.get('row_number')
              if current_row_num_raw is None: continue
              try:

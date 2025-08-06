@@ -101,7 +101,8 @@ class ResultsWidget(QWidget):
 
     def update_simple_view(self):
         self.main_window._clear_layout(self.simple_scroll_layout)
-        visible_results = [res for res in self.main_window.ocr_results if not res.get('is_deleted', False)]
+        # --- FIX: Access ocr_results from the model ---
+        visible_results = [res for res in self.main_window.model.ocr_results if not res.get('is_deleted', False)]
 
         for result in visible_results:
             original_row_number = result['row_number']
@@ -140,11 +141,12 @@ class ResultsWidget(QWidget):
 
     def update_results_table(self):
         self.results_table.blockSignals(True)
-        visible_results = [res for res in self.main_window.ocr_results if not res.get('is_deleted', False)]
+        # --- FIX: Access ocr_results from the model ---
+        visible_results = [res for res in self.main_window.model.ocr_results if not res.get('is_deleted', False)]
         self.results_table.setRowCount(len(visible_results))
 
         # --- NEW: Update header to show active profile ---
-        active_profile = self.main_window.active_profile_name
+        active_profile = self.main_window.model.active_profile_name
         header_text = f"Text ({active_profile})" if active_profile != "Original" else "Text (Original OCR)"
         self.results_table.setHorizontalHeaderLabels([header_text, "Confidence", "Coordinates", "File", "Row Number", ""])
 

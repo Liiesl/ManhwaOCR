@@ -120,7 +120,7 @@ class StitchHandler(QObject):
         # The new combined image will inherit the filename of the first image
         new_filename = first_label.filename
         # --- FIX: Path must point to the 'images' subdirectory in the temp folder ---
-        images_dir = os.path.join(self.main_window.temp_dir, 'images')
+        images_dir = os.path.join(self.main_window.model.temp_dir, 'images')
         new_filepath = os.path.join(images_dir, new_filename)
         print(f"New combined image will be saved as: {new_filepath}")
 
@@ -166,7 +166,7 @@ class StitchHandler(QObject):
             print(f"Processing results for '{current_filename}' with Y-offset: {height_offset}")
 
             # Iterate through all OCR results to find matches
-            for result in self.main_window.ocr_results:
+            for result in self.main_window.model.ocr_results:
                 if result.get('filename') == current_filename:
                     # Update filename to the new combined filename
                     result['filename'] = new_filename
@@ -188,9 +188,9 @@ class StitchHandler(QObject):
             full_path_to_remove = os.path.join(images_dir, filename)
             
             # Find the full path in image_paths as it was originally stored
-            original_full_path = next((p for p in self.main_window.image_paths if os.path.basename(p) == filename), None)
-            if original_full_path and original_full_path in self.main_window.image_paths:
-                self.main_window.image_paths.remove(original_full_path)
+            original_full_path = next((p for p in self.main_window.model.image_paths if os.path.basename(p) == filename), None)
+            if original_full_path and original_full_path in self.main_window.model.image_paths:
+                self.main_window.model.image_paths.remove(original_full_path)
 
             try:
                 if os.path.exists(full_path_to_remove):
@@ -228,7 +228,7 @@ class StitchHandler(QObject):
 
         # --- 6. Finalize and Clean Up ---
         # Sort results to ensure correct order after filename changes
-        self.main_window._sort_ocr_results()
+        self.main_window.model._sort_ocr_results()
         
         # Refresh all views to show the updated results on the new image
         self.main_window.update_all_views()

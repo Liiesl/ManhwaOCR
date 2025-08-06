@@ -6,18 +6,7 @@ from PyQt5.QtGui import QKeySequence, QIcon
 import qtawesome as qta
 from app.core.translations import TranslationThread, _get_text_for_profile_static, generate_for_translate_content, generate_retranslate_content, import_translation_file_content
 
-# Gemini Model List - copied from settings.py for local use
-# NOTE: The original settings.py file contained a set literal for one entry, which has been corrected to a tuple here.
-GEMINI_MODELS_WITH_INFO = [
-    ("gemini-2.5-flash", "500 req/day (free tier)"),
-    ("gemini-2.5-flash-preview-04-17", "500 req/day (free tier)"),
-    ("gemini-2.5-pro", "No free tier"),
-    ("gemini-2.5-pro-preview-05-06", "No free tier"),
-    ("gemini-2.5-flash-lite-preview-06-17", "500 req/day (free tier)"),
-    ("gemini-2.0-flash", "1500 req/day (free tier)"),
-    ("gemini-2.0-flash-lite", "1500 req/day (free tier)"),
-    ("gemma-3n-e4b-it", "14400 req/day")
-]
+from app.ui.dialogs import GEMINI_MODELS_WITH_INFO
 
 # Style constants for row highlighting
 SELECTED_STYLE = "QFrame { background-color: #385675; border: 1px solid #78909c; border-radius: 4px; }"

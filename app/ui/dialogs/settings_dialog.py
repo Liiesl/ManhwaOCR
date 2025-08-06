@@ -4,6 +4,16 @@ from PyQt5.QtWidgets import (QDialog, QDoubleSpinBox, QVBoxLayout, QFormLayout,
 from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QKeySequence
 
+GEMINI_MODELS_WITH_INFO = [
+    ("gemini-2.5-flash", "500 req/day (free tier)"),
+    ("gemini-2.5-pro", "100 req/day (free tier)"),
+    ("gemini-2.5-flash-lite", "500 req/day (free tier)"),
+    ("gemini-2.0-flash", "1500 req/day (free tier)"),
+    ("gemini-2.0-flash-lite", "1500 req/day (free tier)"),
+    ("gemma-3-27b-it", "14400 req/day"),
+    ("gemma-3n-e4b-it", "14400 req/day"),
+]
+
 class SettingsDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -125,15 +135,6 @@ class SettingsDialog(QDialog):
         
         # Define model information (actual_name, display_info_text)
         # Order matches the original list provided in the problem description
-        GEMINI_MODELS_WITH_INFO = [
-            ("gemini-2.5-flash", "500 req/day (free tier)"),
-            ("gemini-2.5-pro", "100 req/day (free tier)"),
-            ("gemini-2.5-flash-lite", "500 req/day (free tier)"),
-            ("gemini-2.0-flash", "1500 req/day (free tier)"),
-            ("gemini-2.0-flash-lite", "1500 req/day (free tier)"),
-            ("gemma-3-27b-it", "14400 req/day"),
-            ("gemma-3n-e4b-it", "14400 req/day"),
-        ]
 
         for model_name, model_info_text in GEMINI_MODELS_WITH_INFO:
             display_text = f"{model_name} | {model_info_text}"
