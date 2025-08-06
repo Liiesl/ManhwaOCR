@@ -46,11 +46,9 @@ class MainWindow(QMainWindow):
             "Korean": "ko",
             "Chinese": "ch_sim",
             "Japanese": "ja",
-            "Englidh": "en",
+            "English": "en",
             "Indonesian": "id",
         }
-        # --- REMOVED state variables now in the model ---
-        # self.active_profile_name, self.profiles, self.ocr_results, self.image_paths, etc.
 
         self._is_handling_selection = False # Flag to prevent signal loops
 
@@ -122,12 +120,15 @@ class MainWindow(QMainWindow):
 
         left_panel.addLayout(settings_layout)
 
-        # REMOVED: Old progress layout and save button
-
         # --- MODIFIED: CustomScrollArea is now self-contained ---
         self.scroll_area = CustomScrollArea(self)
-        self.scroll_area.save_requested.connect(self.show_save_menu)
-        self.scroll_area.action_menu_requested.connect(self.show_action_menu)
+        # --- MODIFIED: Connections now use the generic menu function ---
+        self.scroll_area.save_requested.connect(
+            lambda button: self._show_menu(SaveMenu, button, 'top right')
+        )
+        self.scroll_area.action_menu_requested.connect(
+            lambda button: self._show_menu(ActionMenu, button, 'top left')
+        )
         # --- NEW: Connection for stitch handler UI positioning ---
         self.scroll_area.resized.connect(lambda: self.stitch_handler._update_widget_position() if self.stitch_handler.is_active else None)
 
@@ -140,9 +141,6 @@ class MainWindow(QMainWindow):
         self.scroll_area.setWidget(self.scroll_content)
         self.scroll_area.setWidgetResizable(True)
         left_panel.addWidget(self.scroll_area)
-
-        # --- REMOVED: All logic for creating the scroll area overlay and buttons ---
-        # This is now handled inside the CustomScrollArea class.
 
         # Right Panel
         right_panel = QVBoxLayout()
@@ -164,7 +162,7 @@ class MainWindow(QMainWindow):
         self.btn_manual_ocr = QPushButton(qta.icon('fa5s.crop-alt', color='white'), "Manual OCR")
         self.btn_manual_ocr.setFixedWidth(160)
         self.btn_manual_ocr.setCheckable(True)
-        # --- REMOVED CONNECTION (Handled by ManualOCRHandler) ---
+
         self.btn_manual_ocr.setEnabled(False)
         button_layout.addWidget(self.btn_manual_ocr)
         file_button_layout = QHBoxLayout()
@@ -180,7 +178,10 @@ class MainWindow(QMainWindow):
         self.btn_import_export_menu = QPushButton(qta.icon('fa5s.bars', color='white'), "")
         self.btn_import_export_menu.setFixedWidth(60)
         self.btn_import_export_menu.setToolTip("Open Import/Export Menu")
-        self.btn_import_export_menu.clicked.connect(self.show_import_export_menu)
+        # --- MODIFIED: Connection uses the generic menu function ---
+        self.btn_import_export_menu.clicked.connect(
+            lambda: self._show_menu(ImportExportMenu, self.btn_import_export_menu, 'bottom right')
+        )
         file_button_layout.addWidget(self.btn_import_export_menu)
         button_layout.addLayout(file_button_layout)
         right_panel.addLayout(button_layout)
@@ -254,62 +255,54 @@ class MainWindow(QMainWindow):
         main_widget.setLayout(main_layout)
         self.setCentralWidget(main_widget)
 
-    def show_import_export_menu(self):
-        """Creates and shows the ImportExportMenu popup."""
-        menu = ImportExportMenu(self)
-        menu.import_requested.connect(self.import_translation)
-        menu.export_requested.connect(export_ocr_results)
+    # --- NEW: Generic method to create and show any menu ---
+    def _show_menu(self, menu_class, button, position):
+        """ Creates, positions, and shows a popup menu.
+        Args:
+            menu_class: The class of the menu widget to create (e.g., SaveMenu).
+            button: The button widget that triggered the menu.
+            position: A string like 'top left', 'top right', 'bottom left', 'bottom right'
+                      which determines where the menu is placed relative to the button. """
+        menu = menu_class(self)
+        menu_size = menu.sizeHint()
 
-        # Position the menu. We want to align its top-right corner
-        # with the bottom-right corner of the button that triggered it.
-        button = self.sender()
-        button_pos = button.mapToGlobal(button.rect().bottomRight())
-        
-        # Move the menu's top-left corner to (button_x - menu_width, button_y)
-        menu_pos = QPoint(button_pos.x() - menu.width(), button_pos.y())
+        # Get button's global corner positions
+        button_top_left = button.mapToGlobal(button.rect().topLeft())
+        button_top_right = button.mapToGlobal(button.rect().topRight())
+        button_bottom_left = button.mapToGlobal(button.rect().bottomLeft())
+        button_bottom_right = button.mapToGlobal(button.rect().bottomRight())
+
+        menu_pos = QPoint()
+
+        # Calculate the menu's top-left position based on the desired alignment
+        if position == 'bottom left':
+            # Align menu's top-left to button's bottom-left
+            menu_pos = button_bottom_left
+        elif position == 'bottom right':
+            # Align menu's top-right to button's bottom-right
+            menu_pos = QPoint(button_bottom_right.x() - menu_size.width(), button_bottom_right.y())
+        elif position == 'top left':
+            # Align menu's bottom-left to button's top-left
+            menu_pos = QPoint(button_top_left.x(), button_top_left.y() - menu_size.height())
+        elif position == 'top right':
+            # Align menu's bottom-right to button's top-right
+            menu_pos = QPoint(button_top_right.x() - menu_size.width(), button_top_right.y() - menu_size.height())
+        else: # Default to bottom left as a fallback
+            menu_pos = button_bottom_left
+
         menu.move(menu_pos)
-        
-        menu.show()
-
-    def show_save_menu(self, button):
-        """Creates and shows the SaveMenu popup, positioned relative to the provided button."""
-        menu = SaveMenu(self)
-        menu.save_project_requested.connect(self.save_project)
-        menu.save_images_requested.connect(self.export_manhwa)
-
-        # Get the global position of the button's top-right corner.
-        button_pos = button.mapToGlobal(button.rect().topRight())
-        
-        # Calculate the menu's top-left position so its bottom-right corner
-        # aligns with the button's top-right corner.
-        menu_pos = QPoint(button_pos.x() - menu.width(), button_pos.y() - menu.height())
-        menu.move(menu_pos)
-        
-        menu.show()
-
-    def show_action_menu(self, button):
-        """Creates and shows the ActionMenu popup, positioned relative to the provided button."""
-        menu = ActionMenu(self)
-        menu.hide_text_requested.connect(self.hide_text)
-        menu.split_images_requested.connect(self.split_images)
-        menu.stitch_images_requested.connect(self.stitch_images)
-
-        # Get the global position of the button's top-left corner.
-        button_pos = button.mapToGlobal(button.rect().topLeft())
-        
-        # Calculate the menu's top-left position.
-        # X: Align the menu's left edge with the button's left edge.
-        # Y: Position the menu's bottom edge at the button's top edge (button_y - menu_height).
-        menu_pos = QPoint(button_pos.x(), button_pos.y() - menu.height())
-        menu.move(menu_pos)
-        
         menu.show()
     
     def hide_text(self):
+        # Placeholder for future implementation
         return
+    
     def split_images(self):
+        # Placeholder for future implementation
         return
+
     def stitch_images(self):
+        """Starts the image stitching process via its handler."""
         self.stitch_handler.start_stitching_mode()
 
     def update_profile_selector(self):
@@ -481,8 +474,6 @@ class MainWindow(QMainWindow):
         finally:
             self._is_handling_selection = False
 
-
-    # ... (handle_text_box_selected is unchanged) ...
     def handle_text_box_selected(self, row_number, image_label, selected):
         if self._is_handling_selection:
             return
@@ -522,7 +513,6 @@ class MainWindow(QMainWindow):
             self._is_handling_selection = False
 
     def get_style_for_row(self, row_number):
-        # ... (This method now gets its data from self.model)
         style = {}
         for k, v in DEFAULT_TEXT_STYLE.items():
              if k in ['bg_color', 'border_color', 'text_color']:
@@ -541,7 +531,6 @@ class MainWindow(QMainWindow):
         return style
 
     def update_text_box_style(self, new_style_dict):
-        # ... (This method now gets its data from self.model)
         if not self.selected_text_box_item:
             print("Style changed but no text box selected.")
             return
@@ -610,8 +599,6 @@ class MainWindow(QMainWindow):
         self.results_widget.update_views()
         self.apply_translation_to_images(affected_filenames)
 
-    # --- REMOVED _sort_ocr_results, now handled by model ---
-
     # --- METHOD MODIFIED (Simplified) ---
     def start_ocr(self):
         if not self.model.image_paths:
@@ -630,8 +617,6 @@ class MainWindow(QMainWindow):
 
         self.btn_process.setVisible(False)
         self.btn_stop_ocr.setVisible(True)
-        # --- REMOVED: The handler will now start the progress bar ---
-        # self.ocr_progress.start_initial_progress()
 
         self.model.clear_standard_results()
         self.on_model_updated(None)
@@ -654,8 +639,6 @@ class MainWindow(QMainWindow):
             progress_bar=self.ocr_progress # Pass the reference here
         )
 
-        # --- REMOVED: The connection for batch_progress is no longer needed ---
-        # self.batch_handler.batch_progress.connect(self.on_batch_progress_updated)
         self.batch_handler.batch_finished.connect(self.on_batch_finished)
         self.batch_handler.error_occurred.connect(self.on_batch_error)
         self.batch_handler.processing_stopped.connect(self.on_batch_stopped)
@@ -836,6 +819,12 @@ class MainWindow(QMainWindow):
 
     def export_manhwa(self):
         export_rendered_images(self)
+
+    # --- NEW: Wrapper method for the menu to call ---
+    def export_ocr_results(self):
+        """Wrapper method that calls the utility function for exporting OCR results."""
+        # The utility function needs the main window instance to access the data model.
+        export_ocr_results(self)
 
     def save_project(self):
         """ DELEGATED: Asks the model to save the project. """

@@ -1,23 +1,22 @@
 from PyQt5.QtWidgets import QWidget, QVBoxLayout, QPushButton
-from PyQt5.QtCore import Qt, pyqtSignal, QPoint
+from PyQt5.QtCore import Qt, QPoint
 import qtawesome as qta
+# --- REMOVED: The problematic import is gone ---
 
 class ImportExportMenu(QWidget):
     """
-    A custom popup menu widget for import and export actions.
-    It's a frameless widget that behaves like a modal menu.
+    A custom popup menu for import and export actions.
+    It directly triggers actions on the main window.
     """
-    # Define signals that the main window can connect to
-    import_requested = pyqtSignal()
-    export_requested = pyqtSignal()
 
-    def __init__(self, parent=None):
-        super().__init__(parent)
+    def __init__(self, main_window):
+        """ The menu now takes the main_window instance to call its methods. """
+        super().__init__(main_window)
+        self.main_window = main_window
         
-        # Make it a frameless popup that closes when you click outside of it
         self.setWindowFlags(Qt.FramelessWindowHint | Qt.Popup)
         self.setAttribute(Qt.WA_TranslucentBackground)
-        self.setAttribute(Qt.WA_DeleteOnClose) # Clean up memory
+        self.setAttribute(Qt.WA_DeleteOnClose)
 
         # --- Styling ---
         self.setStyleSheet("""
@@ -51,41 +50,29 @@ class ImportExportMenu(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(1)
 
-        # Import Button
+        # Import Button - Connects to the main window's action
         btn_import = QPushButton(qta.icon('fa5s.file-import', color='white'), " Import Translation")
-        btn_import.clicked.connect(self.on_import_click)
+        btn_import.clicked.connect(lambda: (self.main_window.import_translation(), self.close()))
         layout.addWidget(btn_import)
 
-        # Export Button
+        # Export Button - Connects to the new main window wrapper method
         btn_export = QPushButton(qta.icon('fa5s.file-export', color='white'), " Export OCR Results")
-        btn_export.clicked.connect(self.on_export_click)
+        btn_export.clicked.connect(lambda: (self.main_window.export_ocr_results(), self.close()))
         layout.addWidget(btn_export)
 
-        # Adjust size to fit contents
         self.setFixedSize(self.sizeHint())
 
-    def on_import_click(self):
-        """Emits the import signal and closes the menu."""
-        self.import_requested.emit()
-        self.close()
-
-    def on_export_click(self):
-        """Emits the export signal and closes the menu."""
-        self.export_requested.emit()
-        self.close()
 
 class SaveMenu(QWidget):
     """
     A custom popup menu widget for save actions.
+    It directly triggers actions on the main window.
     """
-    # Define signals that the main window can connect to
-    save_project_requested = pyqtSignal()
-    save_images_requested = pyqtSignal()
-
-    def __init__(self, parent=None):
-        super().__init__(parent)
+    def __init__(self, main_window):
+        """ The menu now takes the main_window instance to call its methods. """
+        super().__init__(main_window)
+        self.main_window = main_window
         
-        # Make it a frameless popup that closes when you click outside of it
         self.setWindowFlags(Qt.FramelessWindowHint | Qt.Popup)
         self.setAttribute(Qt.WA_TranslucentBackground)
         self.setAttribute(Qt.WA_DeleteOnClose)
@@ -124,46 +111,31 @@ class SaveMenu(QWidget):
 
         # Save Project Button
         btn_save_project = QPushButton(qta.icon('fa5s.save', color='white'), " Save Project (.mmtl)")
-        btn_save_project.clicked.connect(self.on_save_project_click)
+        btn_save_project.clicked.connect(lambda: (self.main_window.save_project(), self.close()))
         layout.addWidget(btn_save_project)
 
         # Save Rendered Images Button
         btn_save_images = QPushButton(qta.icon('fa5s.images', color='white'), " Save Rendered Images")
-        btn_save_images.clicked.connect(self.on_save_images_click)
+        btn_save_images.clicked.connect(lambda: (self.main_window.export_manhwa(), self.close()))
         layout.addWidget(btn_save_images)
 
-        # Adjust size to fit contents
         self.setFixedSize(self.sizeHint())
-
-    def on_save_project_click(self):
-        """Emits the save project signal and closes the menu."""
-        self.save_project_requested.emit()
-        self.close()
-
-    def on_save_images_click(self):
-        """Emits the save images signal and closes the menu."""
-        self.save_images_requested.emit()
-        self.close()
 
 
 class ActionMenu(QWidget):
     """
-    A custom popup menu for various image/text actions like hiding text or
-    splitting/stitching images.
+    A custom popup menu for various image/text actions.
     """
-    # Define signals for the actions
-    hide_text_requested = pyqtSignal()
-    split_images_requested = pyqtSignal()
-    stitch_images_requested = pyqtSignal()
-
-    def __init__(self, parent=None):
-        super().__init__(parent)
+    def __init__(self, main_window):
+        """ The menu now takes the main_window instance to call its methods. """
+        super().__init__(main_window)
+        self.main_window = main_window
         
         self.setWindowFlags(Qt.FramelessWindowHint | Qt.Popup)
         self.setAttribute(Qt.WA_TranslucentBackground)
         self.setAttribute(Qt.WA_DeleteOnClose)
 
-        # Use the same styling as other menus in this file for consistency
+        # --- Styling ---
         self.setStyleSheet("""
             QWidget {
                 background-color: #3E4B5B;
@@ -191,20 +163,20 @@ class ActionMenu(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(1)
 
-        # Placeholder Buttons
+        # Action Buttons
         btn_hide_text = QPushButton(qta.icon('fa5s.eye-slash', color='white'), " Hide Text")
-        btn_hide_text.clicked.connect(lambda: (self.hide_text_requested.emit(), self.close()))
+        btn_hide_text.clicked.connect(lambda: (self.main_window.hide_text(), self.close()))
         layout.addWidget(btn_hide_text)
 
         btn_split_images = QPushButton(qta.icon('fa5s.object-ungroup', color='white'), " Split Images")
-        btn_split_images.clicked.connect(lambda: (self.split_images_requested.emit(), self.close()))
+        btn_split_images.clicked.connect(lambda: (self.main_window.split_images(), self.close()))
         layout.addWidget(btn_split_images)
         
         btn_stitch_images = QPushButton(qta.icon('fa5s.object-group', color='white'), " Stitch Images")
-        btn_stitch_images.clicked.connect(lambda: (self.stitch_images_requested.emit(), self.close()))
+        btn_stitch_images.clicked.connect(lambda: (self.main_window.stitch_images(), self.close()))
         layout.addWidget(btn_stitch_images)
 
-        # Since these are placeholders, disable them for now
+        # Placeholders
         btn_hide_text.setEnabled(False)
         btn_split_images.setEnabled(False)
         btn_stitch_images.setEnabled(True)

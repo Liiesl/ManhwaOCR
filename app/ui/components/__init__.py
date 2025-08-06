@@ -5,4 +5,4 @@ from app.ui.components.scroll import CustomScrollArea
 from app.ui.components.results_widget import ResultsWidget
 from app.ui.components.custom_bubble import TextBoxStylePanel
 from app.ui.components.find_replace import FindReplaceWidget
-from app.ui.components.combined_button import ImportExportMenu, SaveMenu, ActionMenu
+from app.ui.components.menus import ImportExportMenu, SaveMenu, ActionMenu

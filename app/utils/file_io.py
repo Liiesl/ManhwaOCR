@@ -24,7 +24,7 @@ def export_translated_images_to_zip(image_paths_with_names):
 
 def export_ocr_results(self):
     """Export OCR results to either a JSON file (Master) or a Markdown file (For-Translate)."""
-    if not self.ocr_results:
+    if not self.model.ocr_results:
         QMessageBox.warning(self, "Error", "No OCR results to export.")
         return
 
