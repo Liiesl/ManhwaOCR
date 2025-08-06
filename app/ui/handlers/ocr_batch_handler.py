@@ -1,6 +1,7 @@
-import os, gc, time, math, traceback
+import os, gc
 from PyQt5.QtCore import QObject, pyqtSignal
 from app.core.ocr_processor import OCRProcessor
+from app.ui.project_model import ProjectModel # Import the model
 
 class BatchOCRHandler(QObject):
     """
@@ -8,24 +9,24 @@ class BatchOCRHandler(QObject):
     This object lives in the main thread but orchestrates worker QThreads.
     """
     batch_progress = pyqtSignal(int)      # Overall progress (0-100)
-    # --- NEW: Signal for incremental updates ---
-    image_processed = pyqtSignal(list)    # Emits results for a single completed image
+    # --- DELETED: This signal is no longer needed ---
+    # image_processed = pyqtSignal(list)
     # --- MODIFIED: batch_finished no longer needs to carry all results ---
     batch_finished = pyqtSignal(int)      # Emits final next row number when all images are done
     error_occurred = pyqtSignal(str)      # Emits any critical error message
     processing_stopped = pyqtSignal()     # Emits when the process is stopped by the user
 
-    def __init__(self, image_paths, reader, settings, starting_row_number):
+    # --- MODIFIED: Constructor now accepts the ProjectModel ---
+    def __init__(self, image_paths, reader, settings, starting_row_number, model: ProjectModel):
         super().__init__()
         self.image_paths = image_paths
         self.reader = reader
         self.settings = settings
         self.starting_row_number = starting_row_number
+        self.model = model # Store a reference to the data model
         
         self.current_image_index = 0
         self.next_global_row_number = self.starting_row_number
-        # --- REMOVED: No need to accumulate results here anymore ---
-        # self.accumulated_results = [] 
         self._is_stopped = False
         self.ocr_thread = None
 
@@ -85,7 +86,7 @@ class BatchOCRHandler(QObject):
 
     # --- MODIFIED: This is the key change ---
     def _handle_image_results(self, processed_results):
-        """Receives results from a single image, emits them for UI update, and starts the next."""
+        """Receives results from a single image, updates the model directly, and starts the next."""
         if self._is_stopped:
             print("Batch Handler: Ignoring results from finished image due to stop request.")
             return
@@ -108,10 +109,10 @@ class BatchOCRHandler(QObject):
                 newly_numbered_results.append(result)
                 self.next_global_row_number += 1
         
-        # --- EMIT the results for this one image immediately ---
+        # --- UPDATE THE MODEL directly instead of emitting a signal ---
         if newly_numbered_results:
-            self.image_processed.emit(newly_numbered_results)
-            print(f"Batch Handler: Emitted {len(newly_numbered_results)} blocks from {filename}.")
+            self.model.add_new_ocr_results(newly_numbered_results)
+            print(f"Batch Handler: Added {len(newly_numbered_results)} blocks from {filename} to model.")
         
         # Move to the next image
         self.current_image_index += 1

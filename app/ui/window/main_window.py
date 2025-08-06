@@ -1,22 +1,21 @@
-from PyQt5.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QSizePolicy,
-                             QCheckBox, QPushButton,  QMessageBox, QSplitter, QAction, 
-                             QLabel, QComboBox)
+from PyQt5.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QSizePolicy, QCheckBox, QPushButton,
+                             QMessageBox, QSplitter, QAction, QLabel, QComboBox)
 from PyQt5.QtCore import Qt, QSettings, QPoint
 from PyQt5.QtGui import QPixmap, QKeySequence, QColor
 import qtawesome as qta
 from app.utils.file_io import export_ocr_results, import_translation_file, export_rendered_images
-from app.ui.components import ResizableImageLabel, CustomScrollArea, ResultsWidget, TextBoxStylePanel, FindReplaceWidget, ImportExportMenu, SaveMenu, ActionMenu
+from app.ui.components import ( ResizableImageLabel, CustomScrollArea, ResultsWidget, TextBoxStylePanel, FindReplaceWidget, 
+                               ImportExportMenu, SaveMenu, ActionMenu)
 from app.ui.widgets import CustomProgressBar, MenuBar 
 from app.ui.handlers import BatchOCRHandler, ManualOCRHandler, StitchHandler 
 # --- MODIFIED IMPORT ---
 from app.ui import ProjectModel
 from app.ui.dialogs import SettingsDialog
-from app.core.translations import import_translation_file_content
 from app.ui.window.translation_window import TranslationWindow
 from assets.styles import (COLORS, MAIN_STYLESHEET, IV_BUTTON_STYLES, ADVANCED_CHECK_STYLES, RIGHT_WIDGET_STYLES,
                             DEFAULT_TEXT_STYLE, DELETE_ROW_STYLES, get_style_diff)
 from assets.styles2 import MANUALOCR_STYLES
-import easyocr, os, gc, json, zipfile, math, sys, traceback
+import easyocr, os, gc, json, traceback
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -81,7 +80,9 @@ class MainWindow(QMainWindow):
         self.selected_text_box_item = None
         if hasattr(self, 'style_panel'):
              self.style_panel.style_changed.connect(self.update_text_box_style)
-        self.batch_handler = None # Initialize batch handler to None
+        
+        # --- MODIFIED: State is now managed by a single handler instance ---
+        self.batch_handler = None 
 
     def _load_filter_settings(self):
         self.min_text_height = int(self.settings.value("min_text_height", 40))
@@ -613,11 +614,11 @@ class MainWindow(QMainWindow):
 
     # --- REMOVED _sort_ocr_results, now handled by model ---
 
+    # --- METHOD MODIFIED (Simplified) ---
     def start_ocr(self):
         if not self.model.image_paths:
             QMessageBox.warning(self, "Warning", "No images loaded to process.")
             return
-        # ... (rest of the checks are the same)
         if self.batch_handler:
             QMessageBox.warning(self, "Warning", "OCR is already running.")
             return
@@ -641,19 +642,24 @@ class MainWindow(QMainWindow):
         ocr_settings = {
             "min_text_height": self.min_text_height, "max_text_height": self.max_text_height,
             "min_confidence": self.min_confidence, "distance_threshold": self.distance_threshold,
-            # ... (other settings are the same)
             "batch_size": int(self.settings.value("ocr_batch_size", 8)), "decoder": self.settings.value("ocr_decoder", "beamsearch"),
             "adjust_contrast": float(self.settings.value("ocr_adjust_contrast", 0.5)), "resize_threshold": int(self.settings.value("ocr_resize_threshold", 1024)),
         }
-
+        
+        # The handler is now created here, given the model, and it will manage its own lifecycle.
         self.batch_handler = BatchOCRHandler(
-            self.model.image_paths, self.reader, ocr_settings, self.model.next_global_row_number
+            image_paths=self.model.image_paths, 
+            reader=self.reader, 
+            settings=ocr_settings, 
+            starting_row_number=self.model.next_global_row_number,
+            model=self.model # Pass the model directly to the handler
         )
+        # We only connect to signals that affect the UI directly.
         self.batch_handler.batch_progress.connect(self.on_batch_progress_updated)
-        self.batch_handler.image_processed.connect(self.on_image_processed)
         self.batch_handler.batch_finished.connect(self.on_batch_finished)
         self.batch_handler.error_occurred.connect(self.on_batch_error)
         self.batch_handler.processing_stopped.connect(self.on_batch_stopped)
+        
         self.batch_handler.start_processing()
 
     def on_image_processed(self, new_results):
@@ -661,6 +667,7 @@ class MainWindow(QMainWindow):
         # The model will emit a signal, and on_model_updated will handle the UI refresh.
         self.model.add_new_ocr_results(new_results)
 
+    # --- METHOD MODIFIED (Simplified) ---
     def on_batch_finished(self, next_row_number):
         """Handles the successful completion of the entire batch."""
         print("MainWindow: Batch finished.")
@@ -668,7 +675,7 @@ class MainWindow(QMainWindow):
         self.cleanup_ocr_session()
         QMessageBox.information(self, "Finished", "OCR processing completed for all images.")
 
-    # ... (Other batch handler slots and cleanup logic are mostly unchanged) ...
+    # ... Other batch handler slots and cleanup logic are mostly unchanged) ...
     def on_batch_progress_updated(self, progress):
         """Updates the progress bar based on the handler's overall progress."""
         self.ocr_progress.update_target_progress(progress)
@@ -685,6 +692,7 @@ class MainWindow(QMainWindow):
         self.cleanup_ocr_session()
         QMessageBox.information(self, "Stopped", "OCR processing was stopped.")
 
+    # --- METHOD MODIFIED (Centralized Cleanup) ---
     def cleanup_ocr_session(self):
         """Resets UI and state after an OCR run (success, error, or stop)."""
         self.btn_stop_ocr.setVisible(False)
