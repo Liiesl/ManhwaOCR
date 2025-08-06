@@ -1,7 +1,7 @@
 from PyQt5.QtWidgets import QPushButton, QMenu
 from PyQt5.QtGui import QPainter, QPen, QColor, QBrush, QFont, QLinearGradient
 from PyQt5.QtCore import Qt, pyqtSignal
-from assets.styles import DEFAULT_GRADIENT
+from assets import DEFAULT_GRADIENT
 
 class PresetButton(QPushButton):
     """A button that displays a preview of a style preset."""

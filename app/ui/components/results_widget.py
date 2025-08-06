@@ -1,13 +1,12 @@
 # --- START OF FILE results_widget.py ---
 
 from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QFrame, QScrollArea, QStackedWidget,
-                             QCheckBox, QPushButton, QTableWidget, QTableWidgetItem, QMessageBox, QHeaderView,
+                             QPushButton, QTableWidget, QTableWidgetItem, QMessageBox, QHeaderView,
                              QTextEdit, QAbstractItemView, QStyledItemDelegate)
 from PyQt5.QtCore import Qt, pyqtSignal, QEvent
 import qtawesome as qta
 import math
-
-from assets.styles import (ADVANCED_CHECK_STYLES, SIMPLE_VIEW_STYLES, DELETE_ROW_STYLES)
+from assets import SIMPLE_VIEW_STYLES, DELETE_ROW_STYLES
 
 class ResultsWidget(QWidget):
     rowSelected = pyqtSignal(object)  # Signal to emit the row_number when selected

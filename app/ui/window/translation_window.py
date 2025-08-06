@@ -1,8 +1,8 @@
 from PyQt5.QtWidgets import ( QDialog, QVBoxLayout, QHBoxLayout, QPushButton, QLabel, QComboBox,
                              QScrollArea, QTextEdit, QFrame, QGridLayout, QCheckBox, QProgressBar, 
                              QMessageBox, QWidget, QShortcut, QSplitter )
-from PyQt5.QtCore import Qt, QSize, pyqtSignal, QEvent, QTimer, QObject
-from PyQt5.QtGui import QKeySequence, QIcon  
+from PyQt5.QtCore import Qt, QSize, pyqtSignal, QEvent, QTimer
+from PyQt5.QtGui import QKeySequence
 import qtawesome as qta
 from app.core.translations import TranslationThread, _get_text_for_profile_static, generate_for_translate_content, generate_retranslate_content, import_translation_file_content
 

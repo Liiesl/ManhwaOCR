@@ -1,7 +1,7 @@
 from PyQt5.QtWidgets import QScrollArea, QWidget, QHBoxLayout, QPushButton
 from PyQt5.QtCore import pyqtSignal
 import qtawesome as qta
-from assets.styles import IV_BUTTON_STYLES
+from assets import IV_BUTTON_STYLES
     
 class CustomScrollArea(QScrollArea):
     """

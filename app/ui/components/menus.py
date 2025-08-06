@@ -1,7 +1,7 @@
 from PyQt5.QtWidgets import QWidget, QVBoxLayout, QPushButton
-from PyQt5.QtCore import Qt, QPoint
+from PyQt5.QtCore import Qt
 import qtawesome as qta
-# --- REMOVED: The problematic import is gone ---
+from assets import MENU_STYLES
 
 class ImportExportMenu(QWidget):
     """
@@ -19,31 +19,7 @@ class ImportExportMenu(QWidget):
         self.setAttribute(Qt.WA_DeleteOnClose)
 
         # --- Styling ---
-        self.setStyleSheet("""
-            QWidget {
-                background-color: #3E4B5B;
-                border: 1px solid #566573;
-                border-radius: 5px;
-                padding: 5px;
-            }
-            QPushButton {
-                background-color: #4A5A6A;
-                color: white;
-                border: 1px solid #566573;
-                padding: 10px 15px;
-                font-size: 14px;
-                text-align: left;
-                border-radius: 4px;
-                margin: 2px;
-            }
-            QPushButton:hover {
-                background-color: #5D6D7E;
-                border: 1px solid #7D8A96;
-            }
-            QPushButton:pressed {
-                background-color: #41505F;
-            }
-        """)
+        self.setStyleSheet(MENU_STYLES)
 
         # --- Layout and Widgets ---
         layout = QVBoxLayout(self)
@@ -78,31 +54,7 @@ class SaveMenu(QWidget):
         self.setAttribute(Qt.WA_DeleteOnClose)
 
         # --- Styling ---
-        self.setStyleSheet("""
-            QWidget {
-                background-color: #3E4B5B;
-                border: 1px solid #566573;
-                border-radius: 5px;
-                padding: 5px;
-            }
-            QPushButton {
-                background-color: #4A5A6A;
-                color: white;
-                border: 1px solid #566573;
-                padding: 10px 15px;
-                font-size: 14px;
-                text-align: left;
-                border-radius: 4px;
-                margin: 2px;
-            }
-            QPushButton:hover {
-                background-color: #5D6D7E;
-                border: 1px solid #7D8A96;
-            }
-            QPushButton:pressed {
-                background-color: #41505F;
-            }
-        """)
+        self.setStyleSheet(MENU_STYLES)
 
         # --- Layout and Widgets ---
         layout = QVBoxLayout(self)
@@ -136,28 +88,7 @@ class ActionMenu(QWidget):
         self.setAttribute(Qt.WA_DeleteOnClose)
 
         # --- Styling ---
-        self.setStyleSheet("""
-            QWidget {
-                background-color: #3E4B5B;
-                border: 1px solid #566573;
-                border-radius: 5px;
-                padding: 5px;
-            }
-            QPushButton {
-                background-color: #4A5A6A;
-                color: white;
-                border: 1px solid #566573;
-                padding: 10px 15px;
-                font-size: 14px;
-                text-align: left;
-                border-radius: 4px;
-                margin: 2px;
-            }
-            QPushButton:hover {
-                background-color: #5D6D7E;
-                border: 1px solid #7D8A96;
-            }
-        """)
+        self.setStyleSheet(MENU_STYLES)
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)

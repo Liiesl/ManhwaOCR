@@ -1,7 +1,6 @@
 from PyQt5.QtWidgets import (QDialog, QDoubleSpinBox, QVBoxLayout, QFormLayout,
                              QComboBox, QSpinBox, QDialogButtonBox, QTabWidget,
-                             QWidget, QLineEdit, QKeySequenceEdit, QCheckBox, QLabel) # Added QLabel
-from PyQt5.QtCore import Qt
+                             QWidget, QLineEdit, QKeySequenceEdit, QCheckBox) # Added QLabel
 from PyQt5.QtGui import QKeySequence
 
 GEMINI_MODELS_WITH_INFO = [

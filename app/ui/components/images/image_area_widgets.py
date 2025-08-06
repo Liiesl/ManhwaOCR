@@ -1,11 +1,8 @@
 # --- START OF FILE image_area_widgets.py ---
 
-from PyQt5.QtWidgets import (QGraphicsScene, QSizePolicy, QGraphicsPixmapItem, QGraphicsEllipseItem,
-                             QGraphicsTextItem, QScrollArea, QGraphicsItem, QGraphicsRectItem, QGraphicsView,
-                             QGraphicsDropShadowEffect, QTextEdit, QRubberBand, QWidget, QGraphicsProxyWidget)
-from PyQt5.QtCore import Qt, pyqtSignal, QRectF, QPointF, QObject, QPoint, QRect, QSize, QTimer, QLineF
-from PyQt5.QtGui import (QPainter, QFont, QBrush, QColor, QPen, QTextOption, QFontDatabase, QPainterPath, QLinearGradient,
-                         QTransform, QPolygonF)
+from PyQt5.QtWidgets import QGraphicsTextItem, QGraphicsItem, QGraphicsRectItem
+from PyQt5.QtCore import Qt, pyqtSignal, QRectF, QPointF, QObject,QLineF
+from PyQt5.QtGui import QPainter, QFont, QBrush, QColor, QPen, QPainterPath, QLinearGradient, QTransform, QPolygonF
 
 # --- NEW: Custom Item for Selection and Resize Handles ---
 class SelectionFrameItem(QGraphicsItem):

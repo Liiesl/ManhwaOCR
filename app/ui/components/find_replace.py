@@ -5,7 +5,7 @@ from PyQt5.QtCore import Qt, pyqtSignal, QTimer
 from PyQt5.QtGui import QTextCursor, QTextCharFormat, QColor, QSyntaxHighlighter, QFont, QTextDocument
 import qtawesome as qta
 import re
-from assets.styles import FIND_REPLACE_STYLESHEET
+from assets import FIND_REPLACE_STYLESHEET
 
 # --- SearchHighlighter class remains the same ---
 class SearchHighlighter(QSyntaxHighlighter):

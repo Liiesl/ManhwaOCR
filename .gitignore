@@ -1,12 +1,7 @@
-bdownload.py
-manhwaocr.py
-temp.py
 /downloaded_images/
 /test/
 changelog.md
-testui.py
 **/__pycache__/
-/md_splitter/
 translated_manhwa.zip
 generate-ascii-tree.py
 /launcher/mmtl_launcher.exe
@@ -15,4 +10,5 @@ generate-ascii-tree.py
 /launcher/mmtl_launcher.build
 /launcher/mmtl_launcher.dist
 /launcher/mmtl_launcher.onefile-build
+legacy/
 clean.bat

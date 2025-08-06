@@ -1,8 +1,7 @@
 # --- MODIFIED: QCheckBox is no longer needed. ---
-from PyQt5.QtWidgets import ( QGraphicsScene, QSizePolicy, QGraphicsPixmapItem, QGraphicsEllipseItem,
-                             QGraphicsTextItem, QScrollArea, QGraphicsItem, QGraphicsRectItem, QGraphicsView, QGraphicsDropShadowEffect, QTextEdit, QRubberBand)
-from PyQt5.QtCore import Qt, pyqtSignal, QRectF, QPointF, QObject, QPoint, QRect, QSize, QTimer
-from PyQt5.QtGui import QPainter, QFont, QBrush, QColor, QPen, QTextOption, QFontDatabase, QPainterPath, QLinearGradient
+from PyQt5.QtWidgets import QGraphicsScene, QSizePolicy, QGraphicsRectItem, QGraphicsView, QRubberBand
+from PyQt5.QtCore import Qt, pyqtSignal, QRectF, QPoint, QRect, QSize, QTimer
+from PyQt5.QtGui import QPainter, QColor, QPen
 from app.ui.components.images.image_area_widgets import TextBoxItem
 
 class ResizableImageLabel(QGraphicsView):

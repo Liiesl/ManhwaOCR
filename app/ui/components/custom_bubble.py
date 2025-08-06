@@ -1,13 +1,13 @@
 import os
 import json
 import functools
-from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QLabel, QComboBox, QPushButton, QColorDialog, QFrame,
+from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QLabel, QComboBox, QPushButton, QFrame,
                              QCheckBox, QSpinBox, QGroupBox, QHBoxLayout, QScrollArea)
 from PyQt5.QtCore import Qt, pyqtSignal, QSettings
 from PyQt5.QtGui import (QColor, QFontDatabase)
 import qtawesome as qta
 from app.ui.components import PresetButton
-from assets.styles import TEXT_BOX_STYLE_PANEL_STYLESHEET, DEFAULT_GRADIENT
+from assets import TEXT_BOX_STYLE_PANEL_STYLESHEET, DEFAULT_GRADIENT
 from app.ui.dialogs import CustomColorDialog
 
 def get_style_diff(style_dict, base_style_dict):

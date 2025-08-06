@@ -12,9 +12,8 @@ from app.ui.handlers import BatchOCRHandler, ManualOCRHandler, StitchHandler
 from app.ui import ProjectModel
 from app.ui.dialogs import SettingsDialog
 from app.ui.window.translation_window import TranslationWindow
-from assets.styles import (COLORS, MAIN_STYLESHEET, IV_BUTTON_STYLES, ADVANCED_CHECK_STYLES, RIGHT_WIDGET_STYLES,
-                            DEFAULT_TEXT_STYLE, DELETE_ROW_STYLES, get_style_diff)
-from assets.styles2 import MANUALOCR_STYLES
+from assets import (COLORS, MAIN_STYLESHEET, IV_BUTTON_STYLES, ADVANCED_CHECK_STYLES, RIGHT_WIDGET_STYLES,
+                    DEFAULT_TEXT_STYLE, DELETE_ROW_STYLES, get_style_diff, MANUALOCR_STYLES)
 import easyocr, os, gc, json, traceback
 
 class MainWindow(QMainWindow):

@@ -1,11 +1,5 @@
-import os
-import json
-import traceback
-import zipfile
-import math
-import sys
+import os, json, traceback, zipfile, math, sys
 from PyQt5.QtCore import QObject, pyqtSignal
-from PyQt5.QtWidgets import QMessageBox
 
 class ProjectModel(QObject):
     """
