@@ -82,8 +82,9 @@ cd ManhwaOCR
 
 ## Step 2: Install Required Dependencies
 
-Install core dependencies with a single command:```bash
-pip install PyQt5 qtawesome easyocr numpy Pillow google-generativeai
+Install core dependencies with a single command:
+```bash
+pip install PyQt5 qtawesome easyocr numpy Pillow google-generativeai beautifulsoup4
 ```
 
 **For EasyOCR** (requires system dependencies):
@@ -98,7 +99,7 @@ Verify Installation
 Run this command to check all core dependencies:
 
 ```bash
-python -c "import PyQt5, Pillow, easyocr, numpy, qtawesome, google-generativeai; print('All dependencies installed successfully!')"
+python -c "import PyQt5, Pillow, easyocr, numpy, qtawesome, google-generativeai, beautifulsoup4; print('All dependencies installed successfully!')"
 ```
 If no errors appear, you're ready to proceed.
 (Note: EasyOCR requires additional system dependencies - verify its functionality by processing an image)
