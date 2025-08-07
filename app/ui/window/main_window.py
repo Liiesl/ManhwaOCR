@@ -6,8 +6,7 @@ import qtawesome as qta
 from app.utils.file_io import export_ocr_results, import_translation_file, export_rendered_images
 from app.ui.components import ResizableImageLabel, CustomScrollArea, ResultsWidget, TextBoxStylePanel, FindReplaceWidget
 from app.ui.widgets import CustomProgressBar, MenuBar, ImportExportMenu, SaveMenu, ActionMenu
-from app.handlers import BatchOCRHandler, ManualOCRHandler, StitchHandler 
-# --- MODIFIED IMPORT ---
+from app.handlers import BatchOCRHandler, ManualOCRHandler, StitchHandler, SplitHandler
 from app.core import ProjectModel
 from app.ui.dialogs import SettingsDialog
 from app.ui.window.translation_window import TranslationWindow
@@ -51,7 +50,13 @@ class MainWindow(QMainWindow):
         self.combine_action.triggered.connect(self.results_widget.combine_selected_rows)
 
         self.manual_ocr_handler = ManualOCRHandler(self)
-        self.stitch_handler = StitchHandler(self) # --- NEW: Instantiate StitchHandler ---
+        self.stitch_handler = StitchHandler(self)
+        # --- NEW: Instantiate SplitHandler ---
+        self.split_handler = SplitHandler(self)
+        # --- NEW: Connect stitch handler UI positioning ---
+        self.scroll_area.resized.connect(lambda: self.stitch_handler._update_widget_position() if self.stitch_handler.is_active else None)
+        # --- NEW: Connect split handler UI positioning ---
+        self.scroll_area.resized.connect(lambda: self.split_handler._update_widget_position() if self.split_handler.is_active else None)
 
         self.scroll_content = QWidget()
         self.reader = None
@@ -278,9 +283,10 @@ class MainWindow(QMainWindow):
         # Placeholder for future implementation
         return
     
+    # --- NEW: Method to start image splitting ---
     def split_images(self):
-        # Placeholder for future implementation
-        return
+        """Starts the image splitting process via its handler."""
+        self.split_handler.start_splitting_mode()
 
     def stitch_images(self):
         """Starts the image stitching process via its handler."""
@@ -345,6 +351,11 @@ class MainWindow(QMainWindow):
         self._clear_layout(self.scroll_layout)
         if self.manual_ocr_handler.is_active:
             self.manual_ocr_handler.cancel_mode()
+        # --- NEW: Cancel stitch/split modes on new project load ---
+        if self.stitch_handler.is_active:
+            self.stitch_handler.cancel_stitching_mode()
+        if self.split_handler.is_active:
+            self.split_handler.cancel_splitting_mode()
 
         image_paths = self.model.image_paths
         

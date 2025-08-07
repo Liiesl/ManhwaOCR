@@ -215,7 +215,7 @@ def import_translation_file(self):
 
 def export_rendered_images(self):
     """Export images with applied translations directly from QGraphicsView scenes."""
-    if not self.image_paths:
+    if not self.model.image_paths:
         QMessageBox.warning(self, "Warning", "No images available for export.")
         return
     # Suspend updates during export
@@ -263,7 +263,7 @@ def export_rendered_images(self):
                 translated_images.append((temp_path, widget.filename))
 
         # Package images into ZIP
-        from utils.file_io import export_translated_images_to_zip
+        from app.utils.file_io import export_translated_images_to_zip
         export_path, success = export_translated_images_to_zip(translated_images)
 
         if success:

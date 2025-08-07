@@ -109,7 +109,7 @@ class ActionMenu(QWidget):
 
         # Placeholders
         btn_hide_text.setEnabled(False)
-        btn_split_images.setEnabled(False)
+        btn_split_images.setEnabled(True)
         btn_stitch_images.setEnabled(True)
 
         self.setFixedSize(self.sizeHint())
