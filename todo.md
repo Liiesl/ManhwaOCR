@@ -7,12 +7,12 @@
 - split images
 - create loading splash screen
 - deprecate apply translation (replaced by real time editing)
+- textbox styles ui rework
 
 ### currently in progress
 - export images & project improvement:
     - dialog where to save
     - default name the same as project.
-- textbox styles ui rework
 
 ### not yet started
 - rework how gradient work

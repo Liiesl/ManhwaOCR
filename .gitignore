@@ -12,3 +12,4 @@ generate-ascii-tree.py
 /launcher/mmtl_launcher.onefile-build
 legacy/
 clean.bat
+test.py
