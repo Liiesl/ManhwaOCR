@@ -23,14 +23,12 @@ class MainWindow(QMainWindow):
         self.settings = QSettings("YourCompany", "MangaOCRTool")
         self._load_filter_settings()
         
-        # --- NEW: Project Model ---
         # The model is the single source of truth for project data.
         self.model = ProjectModel()
         self.model.project_loaded.connect(self.on_project_loaded)
         self.model.project_load_failed.connect(self.on_project_load_failed)
         self.model.model_updated.connect(self.on_model_updated)
         self.model.profiles_updated.connect(self.update_profile_selector)
-
 
         # Actions are created here
         self.combine_action = QAction("Combine Rows", self)
@@ -44,8 +42,6 @@ class MainWindow(QMainWindow):
             "Korean": "ko",
             "Chinese": "ch_sim",
             "Japanese": "ja",
-            "English": "en",
-            "Indonesian": "id",
         }
 
         self._is_handling_selection = False # Flag to prevent signal loops
@@ -57,19 +53,9 @@ class MainWindow(QMainWindow):
         self.manual_ocr_handler = ManualOCRHandler(self)
         self.stitch_handler = StitchHandler(self) # --- NEW: Instantiate StitchHandler ---
 
-        self.current_image = None
         self.scroll_content = QWidget()
         self.reader = None
         self.ocr_processor = None
-
-        self.start_time = None
-        self.processing_times = []
-        self.current_progress = 0
-        self.target_progress = 0
-
-        self.active_image_label = None
-        self.confirm_button = None
-        self.current_text_items = []
 
         self.current_selected_row = None
         self.current_selected_image_label = None
@@ -88,9 +74,6 @@ class MainWindow(QMainWindow):
         print(f"Loaded settings: MinH={self.min_text_height}, MaxH={self.max_text_height}, MinConf={self.min_confidence}, DistThr={self.distance_threshold}")
 
     def init_ui(self):
-        # ... (UI initialization is mostly unchanged) ...
-        # NOTE: self.update_profile_selector() is called here, but the model is empty,
-        # so it will correctly show just "Original" initially.
         self.menuBar = MenuBar(self)
         self.setMenuBar(self.menuBar)
         main_widget = QWidget()
@@ -400,7 +383,6 @@ class MainWindow(QMainWindow):
         return self.model.get_display_text(result)
 
     def on_result_row_selected(self, row_number):
-        # ... (This method's logic is largely unchanged, but it now gets data from self.model) ...
         if self._is_handling_selection:
             return
 
@@ -690,14 +672,53 @@ class MainWindow(QMainWindow):
             # If no handler, but UI is stuck, reset it
             self.cleanup_ocr_session()
 
+    def update_image_text_box(self, row_number, new_text):
+        """Finds a specific TextBoxItem by its row number and updates its text directly."""
+        target_result, _ = self.model._find_result_by_row_number(row_number)
+        if not target_result: return
+
+        filename = target_result.get('filename')
+        if not filename: return
+
+        for i in range(self.scroll_layout.count()):
+            widget = self.scroll_layout.itemAt(i).widget()
+            if isinstance(widget, ResizableImageLabel) and widget.filename == filename:
+                for tb in widget.get_text_boxes():
+                    if tb.row_number == row_number:
+                        if tb.text_item and tb.text_item.toPlainText() != new_text:
+                            tb.text_item.setPlainText(new_text)
+                            tb.adjust_font_size()
+                        return # Found and updated, so we can exit
+
     def update_ocr_text(self, row_number, new_text):
-        """ DELEGATED: Asks the model to update the text. """
-        # The model handles the creation of the "User Edit 1" profile
-        if self.model.active_profile_name == "Original":
-             QMessageBox.information(self, "Edit Profile Created",
-                                     f"First edit detected. A new profile 'User Edit 1' has been created and set as active. "
-                                     "Your original OCR text is preserved.")
-        self.model.update_text(row_number, new_text)
+        """
+        DELEGATED: Asks the model to update the text, and manually updates the
+        image view to prevent a destructive full UI refresh that interrupts editing.
+        """
+        # Disconnect the main model update signal to prevent the ResultsWidget
+        # from being rebuilt, which would cancel the user's text editing.
+        try:
+            self.model.model_updated.disconnect(self.on_model_updated)
+        except TypeError:
+            # This is fine, it just means the signal was not connected.
+            pass
+
+        try:
+            # Update the model's data store.
+            if self.model.active_profile_name == "Original":
+                 QMessageBox.information(self, "Edit Profile Created",
+                                         f"First edit detected. A new profile 'User Edit 1' has been created and set as active. "
+                                         "Your original OCR text is preserved.")
+            self.model.update_text(row_number, new_text)
+
+            # Manually and directly update the text on the corresponding image label's text box.
+            # This fulfills the request for an immediate visual update without a slow global refresh.
+            self.update_image_text_box(row_number, new_text)
+
+        finally:
+            # Always reconnect the signal to ensure that other operations (like deleting,
+            # combining, or loading) still trigger a full UI refresh when needed.
+            self.model.model_updated.connect(self.on_model_updated)
 
     def combine_rows_in_model(self, first_row_number, combined_text, min_confidence, rows_to_delete):
         """ DELEGATED: Asks the model to combine rows. """

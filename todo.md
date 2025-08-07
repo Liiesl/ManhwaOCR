@@ -3,6 +3,7 @@
 ### done (completed in the last 30 days)
 - stitch images
 - major folder layout refactoring
+- fix input on simple mode losing focus after input key.
 
 ### currently in progress
 - splitting images
