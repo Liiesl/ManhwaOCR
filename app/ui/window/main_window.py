@@ -214,10 +214,6 @@ class MainWindow(QMainWindow):
         self.btn_translate.clicked.connect(self.start_translation)
         bottom_controls_layout.addWidget(self.btn_translate)
 
-        self.btn_apply_translation = QPushButton(qta.icon('fa5s.check', color='white'), "Apply Translation")
-        self.btn_apply_translation.clicked.connect(self.apply_translation_to_images)
-        bottom_controls_layout.addWidget(self.btn_apply_translation)
-
         self.advanced_mode_check = QCheckBox("Advanced Mode")
         self.advanced_mode_check.setStyleSheet(ADVANCED_CHECK_STYLES)
         self.advanced_mode_check.setChecked(False)
