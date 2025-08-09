@@ -806,7 +806,7 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "No Data", "There are no OCR results to translate.")
             return
             
-        model_name = self.settings.value("gemini_model", "gemini-2.5-flash")
+        model_name = self.settings.value("gemini_model", "gemini-2.5-flash-lite")
 
         dialog = TranslationWindow(
             api_key, model_name, self.model.ocr_results, list(self.model.profiles.keys()), self

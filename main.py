@@ -50,7 +50,7 @@ class Preloader(QThread):
         time.sleep(0.8)
 
         self.progress_update.emit("Finalizing...")
-        time.sleep(0.5)
+        time.sleep(0.1)
 
         self.finished.emit()
 

@@ -139,7 +139,7 @@ class SettingsDialog(QDialog):
             display_text = f"{model_name} | {model_info_text}"
             self.model_combo.addItem(display_text, userData=model_name) # Store actual model name as userData
 
-        current_model_value = self.settings.value("gemini_model", "gemini-2.5-flash")
+        current_model_value = self.settings.value("gemini_model", "gemini-2.5-flash-lite")
         # Find the index of the item whose userData matches the saved model name
         for i in range(self.model_combo.count()):
             if self.model_combo.itemData(i) == current_model_value:

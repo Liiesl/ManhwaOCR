@@ -25,3 +25,5 @@
 - profile improvement:
     - manual creation, deletion, rename
     - two pane view
+- add stroke on typography
+- add manual textbox insertion
