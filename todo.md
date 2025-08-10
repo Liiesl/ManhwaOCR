@@ -8,11 +8,12 @@
 - create loading splash screen
 - deprecate apply translation (replaced by real time editing)
 - textbox styles ui rework
-
-### currently in progress
 - export images & project improvement:
     - dialog where to save
     - default name the same as project.
+
+### currently in progress
+- implement watermarking
 
 ### not yet started
 - rework how gradient work

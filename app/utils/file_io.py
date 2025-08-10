@@ -6,12 +6,9 @@ from PyQt5.QtCore import QRectF
 from app.ui.components import ResizableImageLabel
 import zipfile
 
-def export_translated_images_to_zip(image_paths_with_names):
+def export_translated_images_to_zip(image_paths_with_names, output_path):
     """Export translated images into a ZIP file."""
     try:
-        # Determine the output ZIP file path
-        output_path = os.path.join(os.getcwd(), "translated_manhwa.zip")
-        
         # Create a ZIP file and add images
         with zipfile.ZipFile(output_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
             for image_path, image_name in image_paths_with_names:
@@ -218,6 +215,19 @@ def export_rendered_images(self):
     if not self.model.image_paths:
         QMessageBox.warning(self, "Warning", "No images available for export.")
         return
+
+    # Ask user for save location. [3, 9]
+    default_filename = f"{self.model.project_name}.zip"
+    export_path, _ = QFileDialog.getSaveFileName(
+        self,
+        "Export Rendered Images",
+        default_filename,
+        "ZIP Files (*.zip)"
+    )
+
+    if not export_path:
+        return # User cancelled
+        
     # Suspend updates during export
     for i in range(self.scroll_layout.count()):
         widget = self.scroll_layout.itemAt(i).widget()
@@ -263,11 +273,10 @@ def export_rendered_images(self):
                 translated_images.append((temp_path, widget.filename))
 
         # Package images into ZIP
-        from app.utils.file_io import export_translated_images_to_zip
-        export_path, success = export_translated_images_to_zip(translated_images)
+        saved_path, success = export_translated_images_to_zip(translated_images, export_path)
 
         if success:
-            QMessageBox.information(self, "Success", f"Exported to:\n{export_path}")
+            QMessageBox.information(self, "Success", f"Exported to:\n{saved_path}")
         else:
             QMessageBox.critical(self, "Error", "Export failed")
     except Exception as e:
