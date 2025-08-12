@@ -5,10 +5,11 @@ import math
 import numpy as np
 from PIL import Image
 
-from PyQt5.QtWidgets import QMessageBox
+from PyQt5.QtWidgets import QMessageBox, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton
 from PyQt5.QtCore import QPoint, QBuffer
 from app.utils.data_processing import group_and_merge_text
 from app.ui.components import ResizableImageLabel
+from assets import MANUALOCR_STYLES
 
 class ManualOCRHandler:
     """Handles all logic for the Manual OCR feature."""
@@ -18,11 +19,38 @@ class ManualOCRHandler:
         self.active_label = None
         self.selected_rect_scene = None
 
-        # Connect signals to the UI elements owned by MainWindow
+        self._setup_ui()
+
+        # Connect signal to the main toggle button in MainWindow
         self.main_window.btn_manual_ocr.clicked.connect(self.toggle_mode)
-        self.main_window.btn_ocr_manual_area.clicked.connect(self.process_selected_area)
-        self.main_window.btn_reset_manual_selection.clicked.connect(self.reset_selection)
-        self.main_window.btn_cancel_manual_ocr.clicked.connect(self.cancel_mode)
+
+    def _setup_ui(self):
+        """Creates the overlay widget that appears after selecting an area."""
+        self.overlay_widget = QWidget(self.main_window)
+        self.overlay_widget.setObjectName("ManualOCROverlay")
+        self.overlay_widget.setStyleSheet(MANUALOCR_STYLES)
+        overlay_layout = QVBoxLayout(self.overlay_widget)
+        overlay_layout.setContentsMargins(5, 5, 5, 5)
+        overlay_layout.addWidget(QLabel("Selected Area:"))
+        overlay_buttons = QHBoxLayout()
+        
+        self.btn_ocr_manual_area = QPushButton("OCR This Part")
+        self.btn_ocr_manual_area.clicked.connect(self.process_selected_area)
+        overlay_buttons.addWidget(self.btn_ocr_manual_area)
+        
+        self.btn_reset_manual_selection = QPushButton("Reset Selection")
+        self.btn_reset_manual_selection.setObjectName("ResetButton")
+        self.btn_reset_manual_selection.clicked.connect(self.reset_selection)
+        overlay_buttons.addWidget(self.btn_reset_manual_selection)
+        
+        self.btn_cancel_manual_ocr = QPushButton("Cancel Manual OCR")
+        self.btn_cancel_manual_ocr.setObjectName("CancelButton")
+        self.btn_cancel_manual_ocr.clicked.connect(self.cancel_mode)
+        overlay_buttons.addWidget(self.btn_cancel_manual_ocr)
+        
+        overlay_layout.addLayout(overlay_buttons)
+        self.overlay_widget.setFixedSize(350, 80)
+        self.overlay_widget.hide()
 
     def toggle_mode(self, checked):
         """Activates or deactivates the manual OCR mode."""
@@ -51,7 +79,7 @@ class ManualOCRHandler:
 
     def _clear_selection_state(self):
         """Hides the overlay and clears any graphical selection indicators."""
-        self.main_window.manual_ocr_overlay.hide()
+        self.overlay_widget.hide()
         self._clear_active_selection_graphics()
         self.active_label = None
         self.selected_rect_scene = None
@@ -112,7 +140,7 @@ class ManualOCRHandler:
             label_pos_in_viewport = label_widget.mapTo(self.main_window.scroll_area.viewport(), QPoint(0, 0))
             global_pos = self.main_window.scroll_area.viewport().mapToGlobal(label_pos_in_viewport)
             main_window_pos = self.main_window.mapFromGlobal(global_pos)
-            overlay = self.main_window.manual_ocr_overlay
+            overlay = self.overlay_widget
             overlay_x = main_window_pos.x() + (label_widget.width() - overlay.width()) // 2
             overlay_y = main_window_pos.y() + label_widget.height() + 5
             overlay_x = max(0, min(overlay_x, self.main_window.width() - overlay.width()))
@@ -134,7 +162,7 @@ class ManualOCRHandler:
             return
 
         print(f"Processing manual OCR for selection on {self.active_label.filename}")
-        self.main_window.manual_ocr_overlay.hide()
+        self.overlay_widget.hide()
 
         try:
             # 1. Get the Crop

@@ -10,6 +10,7 @@ generate-ascii-tree.py
 /launcher/mmtl_launcher.build
 /launcher/mmtl_launcher.dist
 /launcher/mmtl_launcher.onefile-build
+/launcher/nuitka-crash-report.xml
 legacy/
 clean.bat
 test.py

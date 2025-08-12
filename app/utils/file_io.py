@@ -216,12 +216,15 @@ def export_rendered_images(self):
         QMessageBox.warning(self, "Warning", "No images available for export.")
         return
 
-    # Ask user for save location. [3, 9]
+    # Ask user for save location, defaulting to the project's directory.
+    project_directory = os.path.dirname(self.model.mmtl_path) if self.model.mmtl_path else ""
     default_filename = f"{self.model.project_name}.zip"
+    default_path = os.path.join(project_directory, default_filename)
+    
     export_path, _ = QFileDialog.getSaveFileName(
         self,
         "Export Rendered Images",
-        default_filename,
+        default_path,
         "ZIP Files (*.zip)"
     )
 
@@ -246,10 +249,14 @@ def export_rendered_images(self):
             widget = self.scroll_layout.itemAt(i).widget()
             if isinstance(widget, ResizableImageLabel):
                 scene = widget.scene()
-                if not scene or scene.isActive() is False:
-                    print(f"Skipping invalid scene for {widget.filename}")
-                    continue  # Skip invalid scenes
                 
+                # --- CORRECTED LINE ---
+                # The check for scene.isActive() has been removed.
+                if not scene:
+                    print(f"Skipping a null scene for {widget.filename}")
+                    continue  # Skip only if the scene object doesn't exist at all
+                
+                # The scene is valid, proceed with rendering...
                 img_size = widget.original_pixmap.size()
                 image = QImage(img_size, QImage.Format_ARGB32)
                 image.fill(Qt.transparent)

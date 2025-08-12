@@ -29,7 +29,6 @@ class MainWindow(QMainWindow):
         self.model.model_updated.connect(self.on_model_updated)
         self.model.profiles_updated.connect(self.update_profile_selector)
 
-        # Actions are created here
         self.combine_action = QAction("Combine Rows", self)
         # Connection is deferred until after results_widget is created
         self.find_action = QAction("Find/Replace", self)
@@ -51,11 +50,10 @@ class MainWindow(QMainWindow):
 
         self.manual_ocr_handler = ManualOCRHandler(self)
         self.stitch_handler = StitchHandler(self)
-        # --- NEW: Instantiate SplitHandler ---
         self.split_handler = SplitHandler(self)
-        # --- NEW: Connect stitch handler UI positioning ---
+        # Connect stitch handler UI positioning ---
         self.scroll_area.resized.connect(lambda: self.stitch_handler._update_widget_position() if self.stitch_handler.is_active else None)
-        # --- NEW: Connect split handler UI positioning ---
+        # Connect split handler UI positioning ---
         self.scroll_area.resized.connect(lambda: self.split_handler._update_widget_position() if self.split_handler.is_active else None)
 
         self.scroll_content = QWidget()
@@ -92,30 +90,27 @@ class MainWindow(QMainWindow):
         left_panel = QVBoxLayout()
         left_panel.setSpacing(20)
 
-        # --- MODIFIED: Settings and Progress Bar Layout ---
+        #--- Settings and Progress Bar Layout ---
         settings_layout = QHBoxLayout()
         self.btn_settings = QPushButton(qta.icon('fa5s.cog', color='white'), "")
         self.btn_settings.setFixedSize(50, 50)
         self.btn_settings.clicked.connect(self.show_settings_dialog)
         settings_layout.addWidget(self.btn_settings)
 
-        # MOVED: Progress bar is now here, replacing the old save button
         self.ocr_progress = CustomProgressBar()
         self.ocr_progress.setFixedHeight(20)
         settings_layout.addWidget(self.ocr_progress, 1) # Add stretch factor to fill space
 
         left_panel.addLayout(settings_layout)
 
-        # --- MODIFIED: CustomScrollArea is now self-contained ---
         self.scroll_area = CustomScrollArea(self)
-        # --- MODIFIED: Connections now use the generic menu function ---
         self.scroll_area.save_requested.connect(
             lambda button: self._show_menu(SaveMenu, button, 'top right')
         )
         self.scroll_area.action_menu_requested.connect(
             lambda button: self._show_menu(ActionMenu, button, 'top left')
         )
-        # --- NEW: Connection for stitch handler UI positioning ---
+        # Connection for stitch handler UI positioning ---
         self.scroll_area.resized.connect(lambda: self.stitch_handler._update_widget_position() if self.stitch_handler.is_active else None)
 
         self.scroll_content = QWidget()
@@ -154,17 +149,16 @@ class MainWindow(QMainWindow):
         file_button_layout = QHBoxLayout()
         file_button_layout.setAlignment(Qt.AlignRight)
         file_button_layout.setSpacing(20)
-        # --- NEW: Profile Selector Dropdown ---
+
         self.profile_selector = QComboBox(self)
         self.profile_selector.setFixedWidth(220)
         self.profile_selector.setToolTip("Switch between different text profiles (e.g., Original, User Edits, Translations).")
         self.profile_selector.activated[str].connect(self.switch_active_profile)
         file_button_layout.addWidget(self.profile_selector)
-        # --- NEW: Import/Export Menu Button ---
+
         self.btn_import_export_menu = QPushButton(qta.icon('fa5s.bars', color='white'), "")
         self.btn_import_export_menu.setFixedWidth(60)
         self.btn_import_export_menu.setToolTip("Open Import/Export Menu")
-        # --- MODIFIED: Connection uses the generic menu function ---
         self.btn_import_export_menu.clicked.connect(
             lambda: self._show_menu(ImportExportMenu, self.btn_import_export_menu, 'bottom right')
         )
@@ -175,26 +169,6 @@ class MainWindow(QMainWindow):
         self.find_replace_widget = FindReplaceWidget(self)
         right_panel.addWidget(self.find_replace_widget)
         self.find_replace_widget.hide()
-
-        # --- Manual OCR Overlay (UI Definition remains here, logic is in handler) ---
-        self.manual_ocr_overlay = QWidget(self)
-        self.manual_ocr_overlay.setObjectName("ManualOCROverlay")
-        self.manual_ocr_overlay.setStyleSheet(MANUALOCR_STYLES)
-        overlay_layout = QVBoxLayout(self.manual_ocr_overlay)
-        overlay_layout.setContentsMargins(5, 5, 5, 5)
-        overlay_layout.addWidget(QLabel("Selected Area:"))
-        overlay_buttons = QHBoxLayout()
-        self.btn_ocr_manual_area = QPushButton("OCR This Part")
-        overlay_buttons.addWidget(self.btn_ocr_manual_area)
-        self.btn_reset_manual_selection = QPushButton("Reset Selection")
-        self.btn_reset_manual_selection.setObjectName("ResetButton")
-        overlay_buttons.addWidget(self.btn_reset_manual_selection)
-        self.btn_cancel_manual_ocr = QPushButton("Cancel Manual OCR")
-        self.btn_cancel_manual_ocr.setObjectName("CancelButton")
-        overlay_buttons.addWidget(self.btn_cancel_manual_ocr)
-        overlay_layout.addLayout(overlay_buttons)
-        self.manual_ocr_overlay.setFixedSize(350, 80)
-        self.manual_ocr_overlay.hide()
 
         self.right_content_splitter = QSplitter(Qt.Horizontal)
         self.style_panel = TextBoxStylePanel(default_style=DEFAULT_TEXT_STYLE)
@@ -237,7 +211,6 @@ class MainWindow(QMainWindow):
         main_widget.setLayout(main_layout)
         self.setCentralWidget(main_widget)
 
-    # --- NEW: Generic method to create and show any menu ---
     def _show_menu(self, menu_class, button, position):
         """ Creates, positions, and shows a popup menu.
         Args:
@@ -400,7 +373,6 @@ class MainWindow(QMainWindow):
                 return
 
             filename = target_result.get('filename')
-            # ... (the rest of the scrolling and selection logic remains the same) ...
             if not filename:
                 return
             
@@ -420,27 +392,20 @@ class MainWindow(QMainWindow):
                 # Tell the found image widget to select the correct text box.
                 # This now returns the QGraphicsItem for the text box.
                 selected_box_item = target_image_label.select_text_box(row_number)
-
-                # --- NEW SCROLL LOGIC to center the selected box if not visible ---
                 if selected_box_item:
                     # 1. Get coordinates and dimensions
                     scroll_viewport = self.scroll_area.viewport()
                     viewport_height = scroll_viewport.height()
                     current_scroll_y = self.scroll_area.verticalScrollBar().value()
-                    
                     image_label_y_in_scroll = target_image_label.y()
-                    
                     # Scene coordinates of the text box
                     box_rect_scene = selected_box_item.sceneBoundingRect()
-                    
                     # Scale factor from the QGraphicsView transform
                     scale = target_image_label.transform().m11()
-                    
                     # Box position relative to the top of the image label, scaled
                     box_top_in_image = box_rect_scene.top() * scale
                     box_bottom_in_image = box_rect_scene.bottom() * scale
                     box_center_y_in_image = box_rect_scene.center().y() * scale
-
                     # Box absolute position in the entire scrollable area content
                     box_global_top = image_label_y_in_scroll + box_top_in_image
                     box_global_bottom = image_label_y_in_scroll + box_bottom_in_image
@@ -582,9 +547,38 @@ class MainWindow(QMainWindow):
                 if widget is not None: widget.deleteLater()
 
     def update_all_views(self, affected_filenames=None):
-        """Refreshes all views that depend on the ocr_results data."""
+        """
+        Refreshes all views that depend on the model's data, including the
+        results table and the text boxes rendered on the images.
+        """
+        # 1. Update the results table on the right panel.
         self.results_widget.update_views()
-        self.apply_translation_to_images(affected_filenames)
+
+        # 2. Update the text boxes on the images in the left panel.
+        # Group all relevant results from the model by filename for efficient lookup.
+        grouped_results = {}
+        for result in self.model.ocr_results:
+            filename = result.get('filename')
+            if filename:
+                # If a filter is active, skip files not in the list.
+                if affected_filenames and filename not in affected_filenames:
+                    continue
+                if filename not in grouped_results:
+                    grouped_results[filename] = {}
+                grouped_results[filename][result.get('row_number')] = result
+
+        # 3. Iterate through the image widgets and update their displayed text.
+        for i in range(self.scroll_layout.count()):
+            widget = self.scroll_layout.itemAt(i).widget()
+            if isinstance(widget, ResizableImageLabel):
+                image_filename = widget.filename
+                # Only update widgets that are affected.
+                if not affected_filenames or image_filename in affected_filenames:
+                    # Get the pre-grouped results for this image; defaults to empty dict.
+                    results_for_this_image = grouped_results.get(image_filename, {})
+                    # Tell the image widget to redraw its text boxes using the provided data.
+                    # Note: 'apply_translation' is a legacy name; it redraws text boxes.
+                    widget.apply_translation(self, results_for_this_image, DEFAULT_TEXT_STYLE)
 
     # --- METHOD MODIFIED (Simplified) ---
     def start_ocr(self):
@@ -776,25 +770,6 @@ class MainWindow(QMainWindow):
             self.current_selected_image_label = None
             self.selected_text_box_item = None
             self.style_panel.clear_and_hide()
-
-    def apply_translation_to_images(self, filenames_to_update=None):
-        # This method reads from the model but directly manipulates UI widgets, which is correct.
-        grouped_results = {}
-        for result in self.model.ocr_results: # Read from model
-            filename = result.get('filename')
-            row_number = result.get('row_number')
-            if filename is None or row_number is None: continue
-            if filenames_to_update and filename not in filenames_to_update: continue
-            if filename not in grouped_results: grouped_results[filename] = {}
-            grouped_results[filename][row_number] = result
-        
-        for i in range(self.scroll_layout.count()):
-            widget = self.scroll_layout.itemAt(i).widget()
-            if isinstance(widget, ResizableImageLabel):
-                image_filename = widget.filename
-                if not filenames_to_update or image_filename in filenames_to_update:
-                    results_for_this_image = grouped_results.get(image_filename, {})
-                    widget.apply_translation(self, results_for_this_image, DEFAULT_TEXT_STYLE)
 
     def start_translation(self):
         api_key = self.settings.value("gemini_api_key", "")

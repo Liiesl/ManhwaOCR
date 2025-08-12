@@ -28,3 +28,6 @@
     - two pane view
 - add stroke on typography
 - add manual textbox insertion
+- fix find and replace bugs :
+  - roman character not working for some reason if there are other profile in other type of character
+  - profile creation/switching crashes the app when on find
