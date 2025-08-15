@@ -103,7 +103,7 @@ class ShapeStylePanel(QWidget):
         self.btn_bg_color = QPushButton("")
         self.btn_bg_color.setObjectName("colorButton")
         self.btn_bg_color.setFixedSize(48, 28)
-        self.btn_bg_color.clicked.connect(lambda: self._color_chooser_fn(self.btn_bg_color))
+        self.btn_bg_color.clicked.connect(lambda: self._handle_color_choice(self.btn_bg_color))
         fill_layout.addWidget(self.btn_bg_color)
         solid_controls_layout.addLayout(fill_layout, 1)
 
@@ -129,8 +129,7 @@ class ShapeStylePanel(QWidget):
         self.btn_border_color = QPushButton("")
         self.btn_border_color.setObjectName("colorButton")
         self.btn_border_color.setFixedSize(48, 28)
-        # Use our custom handler for the stroke color button
-        self.btn_border_color.clicked.connect(self.handle_border_color_clicked)
+        self.btn_border_color.clicked.connect(lambda: self._handle_color_choice(self.btn_border_color))
         stroke_color_layout.addWidget(self.btn_border_color)
         solid_controls_layout.addLayout(stroke_color_layout, 1)
         main_layout.addWidget(self.solid_controls_widget)
@@ -169,7 +168,7 @@ class ShapeStylePanel(QWidget):
         self.btn_bg_gradient_color1 = QPushButton("")
         self.btn_bg_gradient_color1.setObjectName("colorButton")
         self.btn_bg_gradient_color1.setFixedSize(32, 24)
-        self.btn_bg_gradient_color1.clicked.connect(lambda: self._color_chooser_fn(self.btn_bg_gradient_color1))
+        self.btn_bg_gradient_color1.clicked.connect(lambda: self._handle_color_choice(self.btn_bg_gradient_color1))
         bg_grad_col1_layout.addWidget(self.btn_bg_gradient_color1, 2)
         gradient_fill_layout.addLayout(bg_grad_col1_layout)
 
@@ -179,7 +178,7 @@ class ShapeStylePanel(QWidget):
         self.btn_bg_gradient_color2 = QPushButton("")
         self.btn_bg_gradient_color2.setObjectName("colorButton")
         self.btn_bg_gradient_color2.setFixedSize(32, 24)
-        self.btn_bg_gradient_color2.clicked.connect(lambda: self._color_chooser_fn(self.btn_bg_gradient_color2))
+        self.btn_bg_gradient_color2.clicked.connect(lambda: self._handle_color_choice(self.btn_bg_gradient_color2))
         bg_grad_col2_layout.addWidget(self.btn_bg_gradient_color2, 2)
         gradient_fill_layout.addLayout(bg_grad_col2_layout)
 
@@ -211,24 +210,23 @@ class ShapeStylePanel(QWidget):
         
         self.setStyleSheet(SHAPE_PANEL_STYLE)
 
-    def handle_border_color_clicked(self):
+    def _handle_color_choice(self, button):
         """
-        Adapts the stroke button for the generic color chooser. It temporarily
-        sets a solid background color for the picker to use, then restores
-        the stroke preview style after the picker is closed.
+        Generic handler for all color buttons. It uses the external chooser
+        and ensures the internal state ("colorValue" property) is updated correctly.
         """
-        button = self.btn_border_color
         current_color = self._get_color_from_button(button)
 
-        # Temporarily set the button's background for the color picker to read
+        # Temporarily set a simple background for the generic color picker to read.
         button.setStyleSheet(f"background-color: {current_color.name(QColor.HexArgb)};")
 
-        # Call the modal color chooser function. It will modify the button's style.
+        # Call the modal color chooser function passed from the parent.
+        # This function will modify the button's stylesheet directly.
         self._color_chooser_fn(button)
 
-        # After the chooser closes, parse the background color it has set
+        # After the chooser closes, parse the new color it has set on the stylesheet.
         style = button.styleSheet()
-        new_color_str = current_color.name(QColor.HexArgb) # Default to old color
+        new_color_str = current_color.name(QColor.HexArgb) # Default to old color on failure
         try:
             start = style.find("background-color:") + len("background-color:")
             end = style.find(";", start)
@@ -239,10 +237,10 @@ class ShapeStylePanel(QWidget):
         except:
             pass # On error, new_color_str remains the old color
 
-        # Set the new color in our model. This will also restore the visual preview.
+        # Set the new color in our model. This also restores the correct visual preview
         self.set_button_color(button, new_color_str)
         
-        # If the color actually changed, emit the signal
+        # If the color actually changed, emit the signal to the parent.
         if QColor(new_color_str) != current_color:
             self._on_style_changed()
 
