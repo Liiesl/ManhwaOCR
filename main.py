@@ -7,9 +7,9 @@ import os
 import time
 
 # --- 1. Bare minimum imports for initial launch ---
-from PyQt5.QtWidgets import QApplication, QSplashScreen, QMessageBox
-from PyQt5.QtCore import Qt, QThread, pyqtSignal
-from PyQt5.QtGui import QPixmap, QPainter, QFont, QColor
+from PySide6.QtWidgets import QApplication, QSplashScreen, QMessageBox
+from PySide6.QtCore import Qt, QThread, Signal
+from PySide6.QtGui import QPixmap, QPainter, QFont, QColor
 
 
 class CustomSplashScreen(QSplashScreen):
@@ -38,8 +38,8 @@ class Preloader(QThread):
     """
     Performs initial, non-GUI tasks in a separate thread.
     """
-    finished = pyqtSignal()
-    progress_update = pyqtSignal(str)
+    finished = Signal()
+    progress_update = Signal(str)
 
     def run(self):
         """The entry point for the thread."""
