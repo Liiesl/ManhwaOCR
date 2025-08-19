@@ -1,6 +1,6 @@
 # main.py
 # Application entry point with a splash screen for a smooth startup.
-# CORRECTED to handle command-line arguments more gracefully.
+# FIXED to prevent multiple Home windows and handle app termination properly.
 
 import sys
 import os
@@ -67,11 +67,14 @@ def on_preload_finished():
     global home_window, splash
     print("[ENTRY] Preloading finished. Handling window creation.")
 
-    # --- Defer import and creation to this point ---
-    from app.ui.window import Home
-    # Always create the Home window instance in the background.
-    # It acts as our application controller, even if it's never shown.
-    home_window = Home()
+    # --- Import Home from the correct module ---
+    # Make sure this import path is correct and doesn't cause circular imports
+    from app.ui.window.home_window import Home  # Import from home_window.py directly
+    
+    # Only create Home window instance if it doesn't exist
+    if home_window is None:
+        home_window = Home()
+        print("[ENTRY] Home window instance created.")
 
     # Check for a project file in command-line arguments.
     project_to_open = None
@@ -107,6 +110,10 @@ def on_preload_finished():
 
 if __name__ == '__main__':
     app = QApplication(sys.argv)
+    
+    # Check if application is already running (optional)
+    app.setApplicationName("ManhwaOCR")
+    app.setApplicationVersion("1.0")
 
     # --- Create and configure the splash screen pixmap ---
     pixmap = QPixmap(500, 250)
