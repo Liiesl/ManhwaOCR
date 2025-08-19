@@ -1,8 +1,8 @@
 from PySide6.QtWidgets import ( QDialog, QVBoxLayout, QHBoxLayout, QPushButton, QLabel, QComboBox,
                              QScrollArea, QTextEdit, QFrame, QGridLayout, QCheckBox, QProgressBar, 
-                             QMessageBox, QWidget, QShortcut, QSplitter )
+                             QMessageBox, QWidget, QSplitter )
 from PySide6.QtCore import Qt, QSize, Signal, QEvent, QTimer
-from PySide6.QtGui import QKeySequence
+from PySide6.QtGui import QShortcut, QKeySequence
 import qtawesome as qta
 from app.core.translations import TranslationThread, _get_text_for_profile_static, generate_for_translate_content, generate_retranslate_content, import_translation_file_content
 
