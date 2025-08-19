@@ -10,6 +10,7 @@ import time
 from PySide6.QtWidgets import QApplication, QSplashScreen, QMessageBox
 from PySide6.QtCore import Qt, QThread, Signal
 from PySide6.QtGui import QPixmap, QPainter, QFont, QColor
+from app.utils.qsettings import init_settings
 
 
 class CustomSplashScreen(QSplashScreen):
@@ -110,6 +111,9 @@ def on_preload_finished():
 
 if __name__ == '__main__':
     app = QApplication(sys.argv)
+    
+    # --- Initialize the global settings object ---
+    init_settings()
     
     # Check if application is already running (optional)
     app.setApplicationName("ManhwaOCR")

@@ -2,6 +2,7 @@ from PySide6.QtWidgets import (QDialog, QDoubleSpinBox, QVBoxLayout, QFormLayout
                              QComboBox, QSpinBox, QDialogButtonBox, QTabWidget,
                              QWidget, QLineEdit, QKeySequenceEdit, QCheckBox) # Added QLabel
 from PySide6.QtGui import QKeySequence
+from app.utils.qsettings import settings_instance
 
 GEMINI_MODELS_WITH_INFO = [
     ("gemini-2.5-flash", "500 req/day (free tier)"),
@@ -17,7 +18,6 @@ class SettingsDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Settings")
-        self.settings = parent.settings  # Access main window's QSettings
 
         # Main layout for the dialog
         main_layout = QVBoxLayout()
@@ -31,14 +31,14 @@ class SettingsDialog(QDialog):
 
         self.show_delete_warning_check = QCheckBox()
         self.show_delete_warning_check.setChecked(
-            self.settings.value("show_delete_warning", "true") == "true"
+            settings_instance.value("show_delete_warning", "true") == "true"
         )
         general_layout.addRow("Show delete confirmation dialog:", self.show_delete_warning_check)
 
         # --- Add GPU Setting ---
         self.use_gpu_check = QCheckBox()
         self.use_gpu_check.setChecked(
-            self.settings.value("use_gpu", "true").lower() == "true" # Default to True
+            settings_instance.value("use_gpu", "true").lower() == "true" # Default to True
         )
         self.use_gpu_check.setToolTip("Requires compatible NVIDIA GPU and CUDA drivers. Restart may be needed.")
         general_layout.addRow("Use GPU for OCR (if available):", self.use_gpu_check)
@@ -55,14 +55,14 @@ class SettingsDialog(QDialog):
         self.min_text_spin = QSpinBox()
         self.min_text_spin.setRange(0, 10000) # More reasonable max
         self.min_text_spin.setSuffix(" px")
-        self.min_text_spin.setValue(int(self.settings.value("min_text_height", 40)))
+        self.min_text_spin.setValue(int(settings_instance.value("min_text_height", 40)))
         form_layout.addRow("Minimum Text Height:", self.min_text_spin)
 
         # Max Text Height Setting
         self.max_text_spin = QSpinBox()
         self.max_text_spin.setRange(0, 10000) # More reasonable max
         self.max_text_spin.setSuffix(" px")
-        self.max_text_spin.setValue(int(self.settings.value("max_text_height", 100)))
+        self.max_text_spin.setValue(int(settings_instance.value("max_text_height", 100)))
         form_layout.addRow("Maximum Text Height:", self.max_text_spin)
 
         # Min Confidence Setting
@@ -70,14 +70,14 @@ class SettingsDialog(QDialog):
         self.confidence_spin.setRange(0.0, 1.0)
         self.confidence_spin.setSingleStep(0.05) # Smaller step
         self.confidence_spin.setDecimals(2)
-        self.confidence_spin.setValue(float(self.settings.value("min_confidence", 0.2)))
+        self.confidence_spin.setValue(float(settings_instance.value("min_confidence", 0.2)))
         form_layout.addRow("Minimum Confidence:", self.confidence_spin)
 
         # Distance Threshold Setting
         self.distance_spin = QSpinBox()
         self.distance_spin.setRange(0, 1000) # More reasonable max
         self.distance_spin.setSuffix(" px")
-        self.distance_spin.setValue(int(self.settings.value("distance_threshold", 100)))
+        self.distance_spin.setValue(int(settings_instance.value("distance_threshold", 100)))
         form_layout.addRow("Merge Distance Threshold:", self.distance_spin)
 
         # --- NEW EASYOCR SETTINGS ---
@@ -85,14 +85,14 @@ class SettingsDialog(QDialog):
         # Batch Size
         self.batch_size_spin = QSpinBox()
         self.batch_size_spin.setRange(1, 64) # Range 1 to 64
-        self.batch_size_spin.setValue(int(self.settings.value("ocr_batch_size", 8))) # Default 8
+        self.batch_size_spin.setValue(int(settings_instance.value("ocr_batch_size", 8))) # Default 8
         self.batch_size_spin.setToolTip("Number of image patches processed simultaneously (higher needs more GPU VRAM).")
         form_layout.addRow("OCR Batch Size:", self.batch_size_spin)
 
         # Decoder
         self.decoder_combo = QComboBox()
         self.decoder_combo.addItems(["beamsearch", "greedy"])
-        self.decoder_combo.setCurrentText(self.settings.value("ocr_decoder", "beamsearch")) # Default beamsearch
+        self.decoder_combo.setCurrentText(settings_instance.value("ocr_decoder", "beamsearch")) # Default beamsearch
         self.decoder_combo.setToolTip("'beamsearch' is generally more accurate but slower. 'greedy' is faster.")
         form_layout.addRow("OCR Decoder:", self.decoder_combo)
 
@@ -101,7 +101,7 @@ class SettingsDialog(QDialog):
         self.contrast_spin.setRange(0.0, 1.0)
         self.contrast_spin.setSingleStep(0.1)
         self.contrast_spin.setDecimals(1)
-        self.contrast_spin.setValue(float(self.settings.value("ocr_adjust_contrast", 0.5))) # Default 0.5
+        self.contrast_spin.setValue(float(settings_instance.value("ocr_adjust_contrast", 0.5))) # Default 0.5
         self.contrast_spin.setToolTip("Automatically adjust image contrast (0.0 to disable). May help or hurt depending on image.")
         form_layout.addRow("OCR Adjust Contrast:", self.contrast_spin)
 
@@ -110,7 +110,7 @@ class SettingsDialog(QDialog):
         self.resize_threshold_spin.setRange(0, 8192) # Allow up to 8k, 0 for disable
         self.resize_threshold_spin.setSuffix(" px")
         self.resize_threshold_spin.setSpecialValueText("Disabled") # Show text when value is 0
-        self.resize_threshold_spin.setValue(int(self.settings.value("ocr_resize_threshold", 1024))) # Default 1024
+        self.resize_threshold_spin.setValue(int(settings_instance.value("ocr_resize_threshold", 1024))) # Default 1024
         self.resize_threshold_spin.setToolTip("Resize images wider than this before OCR. Set to 0 to disable resizing.")
         form_layout.addRow("OCR Resize Threshold (Max Width):", self.resize_threshold_spin)
 
@@ -126,7 +126,7 @@ class SettingsDialog(QDialog):
         # Gemini API Key
         self.api_key_edit = QLineEdit()
         self.api_key_edit.setEchoMode(QLineEdit.Password)
-        self.api_key_edit.setText(self.settings.value("gemini_api_key", ""))
+        self.api_key_edit.setText(settings_instance.value("gemini_api_key", ""))
         api_layout.addRow("Gemini API Key:", self.api_key_edit)
 
         # Gemini Model Selection
@@ -139,7 +139,7 @@ class SettingsDialog(QDialog):
             display_text = f"{model_name} | {model_info_text}"
             self.model_combo.addItem(display_text, userData=model_name) # Store actual model name as userData
 
-        current_model_value = self.settings.value("gemini_model", "gemini-2.5-flash-lite")
+        current_model_value = settings_instance.value("gemini_model", "gemini-2.5-flash-lite")
         # Find the index of the item whose userData matches the saved model name
         for i in range(self.model_combo.count()):
             if self.model_combo.itemData(i) == current_model_value:
@@ -157,7 +157,7 @@ class SettingsDialog(QDialog):
             "Spanish", "French", "German", "Bahasa Indonesia", # Renamed Bahasa Indonesia
             "Vietnamese", "Thai", "Russian", "Portuguese"
         ])
-        current_lang = self.settings.value("target_language", "English")
+        current_lang = settings_instance.value("target_language", "English")
         self.lang_combo.setCurrentText(current_lang)
         api_layout.addRow("Target Language:", self.lang_combo)
 
@@ -170,13 +170,13 @@ class SettingsDialog(QDialog):
 
         # Combine Rows Shortcut
         self.combine_shortcut_edit = QKeySequenceEdit(
-            QKeySequence(self.settings.value("combine_shortcut", "Ctrl+G"))
+            QKeySequence(settings_instance.value("combine_shortcut", "Ctrl+G"))
         )
         shortcuts_layout.addRow("Combine Rows Shortcut:", self.combine_shortcut_edit)
 
         # Find/Replace Shortcut
         self.find_shortcut_edit = QKeySequenceEdit(
-            QKeySequence(self.settings.value("find_shortcut", "Ctrl+F"))
+            QKeySequence(settings_instance.value("find_shortcut", "Ctrl+F"))
         )
         shortcuts_layout.addRow("Find/Replace Shortcut:", self.find_shortcut_edit)
         shortcuts_tab.setLayout(shortcuts_layout)
@@ -195,30 +195,30 @@ class SettingsDialog(QDialog):
 
     def accept(self):
         # Save General settings
-        self.settings.setValue("show_delete_warning",
+        settings_instance.setValue("show_delete_warning",
             "true" if self.show_delete_warning_check.isChecked() else "false")
-        self.settings.setValue("use_gpu",
+        settings_instance.setValue("use_gpu",
             "true" if self.use_gpu_check.isChecked() else "false")
 
         # Save OCR Processing settings
-        self.settings.setValue("min_text_height", self.min_text_spin.value())
-        self.settings.setValue("max_text_height", self.max_text_spin.value())
-        self.settings.setValue("min_confidence", self.confidence_spin.value())
-        self.settings.setValue("distance_threshold", self.distance_spin.value())
+        settings_instance.setValue("min_text_height", self.min_text_spin.value())
+        settings_instance.setValue("max_text_height", self.max_text_spin.value())
+        settings_instance.setValue("min_confidence", self.confidence_spin.value())
+        settings_instance.setValue("distance_threshold", self.distance_spin.value())
         # Save new EasyOCR settings
-        self.settings.setValue("ocr_batch_size", self.batch_size_spin.value())
-        self.settings.setValue("ocr_decoder", self.decoder_combo.currentText())
-        self.settings.setValue("ocr_adjust_contrast", self.contrast_spin.value())
-        self.settings.setValue("ocr_resize_threshold", self.resize_threshold_spin.value())
+        settings_instance.setValue("ocr_batch_size", self.batch_size_spin.value())
+        settings_instance.setValue("ocr_decoder", self.decoder_combo.currentText())
+        settings_instance.setValue("ocr_adjust_contrast", self.contrast_spin.value())
+        settings_instance.setValue("ocr_resize_threshold", self.resize_threshold_spin.value())
 
         # Save API settings
-        self.settings.setValue("gemini_api_key", self.api_key_edit.text())
-        self.settings.setValue("gemini_model", self.model_combo.currentData()) # Use currentData() to get actual model name
-        self.settings.setValue("target_language", self.lang_combo.currentText())
+        settings_instance.setValue("gemini_api_key", self.api_key_edit.text())
+        settings_instance.setValue("gemini_model", self.model_combo.currentData()) # Use currentData() to get actual model name
+        settings_instance.setValue("target_language", self.lang_combo.currentText())
 
         # Save Keyboard Shortcuts
-        self.settings.setValue("combine_shortcut", self.combine_shortcut_edit.keySequence().toString())
+        settings_instance.setValue("combine_shortcut", self.combine_shortcut_edit.keySequence().toString())
         # Use NativeText format for saving find shortcut if needed, standard toString might be fine
-        self.settings.setValue("find_shortcut", self.find_shortcut_edit.keySequence().toString(QKeySequence.NativeText))
+        settings_instance.setValue("find_shortcut", self.find_shortcut_edit.keySequence().toString(QKeySequence.NativeText))
 
         super().accept()
