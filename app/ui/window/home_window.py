@@ -11,12 +11,11 @@ import traceback
 
 from PySide6.QtWidgets import (QApplication, QWidget, QVBoxLayout, QPushButton, QFrame, QMainWindow, QLabel, QMessageBox,
                              QScrollArea, QHBoxLayout, QDialog)
-from PySide6.QtCore import Qt, QDateTime, QThread, Signal, QEvent
+from PySide6.QtCore import Qt, QSettings, QDateTime, QThread, Signal, QEvent
 from app.utils import new_project, open_project, import_from_wfwf, correct_filenames
 from assets.styles import (HOME_STYLES, HOME_LEFT_LAYOUT_STYLES)
 from app.ui.window import CustomTitleBar, WindowResizer
 from app.ui.widgets import TitleBarState
-from app.utils.qsettings import settings_instance
 
 
 class ProjectItemWidget(QFrame):
@@ -199,6 +198,7 @@ class ProjectLoaderThread(QThread):
 class Home(QMainWindow):
     def __init__(self):
         super().__init__()
+        self.settings = QSettings("YourCompany", "MangaOCRTool")
         self.setWindowFlags(Qt.FramelessWindowHint)
         self.setAttribute(Qt.WA_TranslucentBackground)
         
@@ -288,8 +288,8 @@ class Home(QMainWindow):
         return f"{years} year{'s' if years > 1 else ''} ago"
 
     def load_recent_projects(self):
-        recent_projects = settings_instance.value("recent_projects", [])
-        recent_timestamps = settings_instance.value("recent_timestamps", {})
+        recent_projects = self.settings.value("recent_projects", [])
+        recent_timestamps = self.settings.value("recent_timestamps", {})
         
         self.projects_list.clear()
         for path in recent_projects:
@@ -320,16 +320,16 @@ class Home(QMainWindow):
         return correct_filenames(directory)
 
     def update_recent_projects(self, project_path):
-        recent = settings_instance.value("recent_projects", [])
+        recent = self.settings.value("recent_projects", [])
         if project_path in recent:
             recent.remove(project_path)
         recent.insert(0, project_path)
-        settings_instance.setValue("recent_projects", recent[:10])
+        self.settings.setValue("recent_projects", recent[:10])
         
-        timestamps = settings_instance.value("recent_timestamps", {})
+        timestamps = self.settings.value("recent_timestamps", {})
         current_time = QDateTime.currentDateTime().toString(Qt.ISODate)
         timestamps[project_path] = current_time
-        settings_instance.setValue("recent_timestamps", timestamps)
+        self.settings.setValue("recent_timestamps", timestamps)
 
     def launch_main_app(self, mmtl_path):
         self.loading_dialog = LoadingDialog(self)

@@ -2,7 +2,7 @@
 
 from PySide6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QSizePolicy, QCheckBox, QPushButton,
                              QMessageBox, QSplitter, QLabel, QComboBox)
-from PySide6.QtCore import Qt, QPoint
+from PySide6.QtCore import Qt, QSettings, QPoint
 from PySide6.QtGui import QPixmap, QKeySequence, QAction, QColor
 import qtawesome as qta
 from app.utils.file_io import export_ocr_results, import_translation_file, export_rendered_images
@@ -15,13 +15,13 @@ from app.ui.window.translation_window import TranslationWindow
 from assets import (COLORS, MAIN_STYLESHEET, IV_BUTTON_STYLES, ADVANCED_CHECK_STYLES, RIGHT_WIDGET_STYLES,
                     DEFAULT_TEXT_STYLE, DELETE_ROW_STYLES, get_style_diff, MANUALOCR_STYLES)
 import easyocr, os, gc, json, traceback
-from app.utils.qsettings import settings_instance
 
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Manhwa OCR Tool")
         self.setGeometry(100, 100, 1200, 600)
+        self.settings = QSettings("YourCompany", "MangaOCRTool")
         self._load_filter_settings()
         
         # The model is the single source of truth for project data.
@@ -72,10 +72,10 @@ class MainWindow(QMainWindow):
         self.batch_handler = None 
 
     def _load_filter_settings(self):
-        self.min_text_height = int(settings_instance.value("min_text_height", 40))
-        self.max_text_height = int(settings_instance.value("max_text_height", 100))
-        self.min_confidence = float(settings_instance.value("min_confidence", 0.2))
-        self.distance_threshold = int(settings_instance.value("distance_threshold", 100))
+        self.min_text_height = int(self.settings.value("min_text_height", 40))
+        self.max_text_height = int(self.settings.value("max_text_height", 100))
+        self.min_confidence = float(self.settings.value("min_confidence", 0.2))
+        self.distance_threshold = int(self.settings.value("distance_threshold", 100))
         print(f"Loaded settings: MinH={self.min_text_height}, MaxH={self.max_text_height}, MinConf={self.min_confidence}, DistThr={self.distance_threshold}")
 
     def init_ui(self):
@@ -321,7 +321,7 @@ class MainWindow(QMainWindow):
             self.find_replace_widget.show()
 
     def update_find_shortcut(self):
-        shortcut = settings_instance.value("find_shortcut", "Ctrl+F")
+        shortcut = self.settings.value("find_shortcut", "Ctrl+F")
         self.find_action.setShortcut(QKeySequence(shortcut))
         print(f"Find shortcut set to: {shortcut}")
 
@@ -540,7 +540,7 @@ class MainWindow(QMainWindow):
         try:
             # Get language from the model
             lang_code = self.language_map.get(self.model.original_language, 'ko')
-            use_gpu = settings_instance.value("use_gpu", "true").lower() == "true"
+            use_gpu = self.settings.value("use_gpu", "true").lower() == "true"
             print(f"Initializing EasyOCR reader for {context}: Lang='{lang_code}', GPU={use_gpu}")
             self.reader = easyocr.Reader([lang_code], gpu=use_gpu)
             print("EasyOCR reader initialized successfully.")
@@ -628,8 +628,8 @@ class MainWindow(QMainWindow):
         ocr_settings = {
             "min_text_height": self.min_text_height, "max_text_height": self.max_text_height,
             "min_confidence": self.min_confidence, "distance_threshold": self.distance_threshold,
-            "batch_size": int(settings_instance.value("ocr_batch_size", 8)), "decoder": settings_instance.value("ocr_decoder", "beamsearch"),
-            "adjust_contrast": float(settings_instance.value("ocr_adjust_contrast", 0.5)), "resize_threshold": int(settings_instance.value("ocr_resize_threshold", 1024)),
+            "batch_size": int(self.settings.value("ocr_batch_size", 8)), "decoder": self.settings.value("ocr_decoder", "beamsearch"),
+            "adjust_contrast": float(self.settings.value("ocr_adjust_contrast", 0.5)), "resize_threshold": int(self.settings.value("ocr_resize_threshold", 1024)),
         }
         
         # --- MODIFIED: Pass the progress bar widget directly to the handler ---
@@ -768,7 +768,7 @@ class MainWindow(QMainWindow):
     def delete_row(self, row_number_to_delete):
         """ DELEGATED: Asks the model to delete a row after confirming with the user. """
         # Confirmation logic stays in the UI layer
-        show_warning = settings_instance.value("show_delete_warning", "true") == "true"
+        show_warning = self.settings.value("show_delete_warning", "true") == "true"
         proceed = True
         if show_warning:
             msg = QMessageBox(self); msg.setIcon(QMessageBox.Warning)
@@ -778,7 +778,7 @@ class MainWindow(QMainWindow):
             dont_show_cb = QCheckBox("Remember choice", msg); msg.setCheckBox(dont_show_cb)
             msg.setStandardButtons(QMessageBox.Yes | QMessageBox.No); msg.setDefaultButton(QMessageBox.No)
             response = msg.exec_()
-            if dont_show_cb.isChecked(): settings_instance.setValue("show_delete_warning", "false")
+            if dont_show_cb.isChecked(): self.settings.setValue("show_delete_warning", "false")
             proceed = response == QMessageBox.Yes
         if not proceed: return
 
@@ -794,7 +794,7 @@ class MainWindow(QMainWindow):
             self.style_panel.clear_and_hide()
 
     def start_translation(self):
-        api_key = settings_instance.value("gemini_api_key", "")
+        api_key = self.settings.value("gemini_api_key", "")
         if not api_key:
             QMessageBox.critical(self, "API Key Missing", "Please set your Gemini API key in Settings.")
             return
@@ -803,7 +803,7 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "No Data", "There are no OCR results to translate.")
             return
             
-        model_name = settings_instance.value("gemini_model", "gemini-2.5-flash-lite")
+        model_name = self.settings.value("gemini_model", "gemini-2.5-flash-lite")
 
         dialog = TranslationWindow(
             api_key, model_name, self.model.ocr_results, list(self.model.profiles.keys()), self
@@ -836,7 +836,7 @@ class MainWindow(QMainWindow):
             QMessageBox.critical(self, "Import Error", f"Failed to import and apply translation file: {str(e)}")
 
     def update_shortcut(self):
-        combine_shortcut = settings_instance.value("combine_shortcut", "Ctrl+G")
+        combine_shortcut = self.settings.value("combine_shortcut", "Ctrl+G")
         self.combine_action.setShortcut(QKeySequence(combine_shortcut))
         self.update_find_shortcut()
 
