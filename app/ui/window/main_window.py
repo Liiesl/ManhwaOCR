@@ -1,7 +1,7 @@
-from PyQt5.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QSizePolicy, QCheckBox, QPushButton,
+from PySide6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QSizePolicy, QCheckBox, QPushButton,
                              QMessageBox, QSplitter, QAction, QLabel, QComboBox)
-from PyQt5.QtCore import Qt, QSettings, QPoint
-from PyQt5.QtGui import QPixmap, QKeySequence, QColor
+from PySide6.QtCore import Qt, QSettings, QPoint
+from PySide6.QtGui import QPixmap, QKeySequence, QColor
 import qtawesome as qta
 from app.utils.file_io import export_ocr_results, import_translation_file, export_rendered_images
 from app.ui.components import ResizableImageLabel, CustomScrollArea, ResultsWidget, TextBoxStylePanel, FindReplaceWidget

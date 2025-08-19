@@ -1,9 +1,9 @@
 # --- START OF FILE results_widget.py ---
 
-from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QFrame, QScrollArea, QStackedWidget,
+from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QFrame, QScrollArea, QStackedWidget,
                              QPushButton, QTableWidget, QTableWidgetItem, QMessageBox, QHeaderView,
                              QTextEdit, QAbstractItemView, QStyledItemDelegate)
-from PyQt5.QtCore import Qt, pyqtSignal, QEvent
+from PySide6.QtCore import Qt, pyqtSignal, QEvent
 import qtawesome as qta
 import math
 from assets import SIMPLE_VIEW_STYLES, DELETE_ROW_STYLES

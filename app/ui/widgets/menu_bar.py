@@ -1,4 +1,4 @@
-from PyQt5.QtWidgets import QMenuBar, QAction, QFileDialog
+from PySide6.QtWidgets import QMenuBar, QAction, QFileDialog
 import qtawesome as qta
 from enum import Enum, auto
 

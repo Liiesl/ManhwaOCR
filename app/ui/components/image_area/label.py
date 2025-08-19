@@ -1,8 +1,8 @@
 # app/ui/components/image_area/label.py
 
-from PyQt5.QtWidgets import QGraphicsScene, QSizePolicy, QGraphicsRectItem, QGraphicsView, QRubberBand, QGraphicsLineItem, QGraphicsEllipseItem
-from PyQt5.QtCore import Qt, pyqtSignal, QRectF, QPoint, QRect, QSize, QTimer
-from PyQt5.QtGui import QPainter, QColor, QPen, QBrush
+from PySide6.QtWidgets import QGraphicsScene, QSizePolicy, QGraphicsRectItem, QGraphicsView, QRubberBand, QGraphicsLineItem, QGraphicsEllipseItem
+from PySide6.QtCore import Qt, pyqtSignal, QRectF, QPoint, QRect, QSize, QTimer
+from PySide6.QtGui import QPainter, QColor, QPen, QBrush
 from app.ui.components.image_area.textbox import TextBoxItem
 
 class ResizableImageLabel(QGraphicsView):

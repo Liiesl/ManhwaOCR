@@ -1,8 +1,8 @@
 import sys
-from PyQt5.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton, QWidget,
+from PySide6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton, QWidget,
                              QDialogButtonBox, QGridLayout, QStyle, QTabWidget, QInputDialog, QFrame, QTabBar) # Added QInputDialog, QFrame
-from PyQt5.QtCore import (Qt, pyqtSignal, pyqtSlot, QSize, QPoint, QRegularExpression, QSettings)
-from PyQt5.QtGui import (QColor, QPixmap, QPainter, QRegularExpressionValidator, QIcon, QRegion)
+from PySide6.QtCore import (Qt, Signal, pyqtSlot, QSize, QPoint, QRegularExpression, QSettings)
+from PySide6.QtGui import (QColor, QPixmap, QPainter, QRegularExpressionValidator, QIcon, QRegion)
 # Import the new modular widgets from the helper file
 from app.ui.dialogs.BetterColorDialog.Helper1 import HueRing, ColorSquare, CheckerboardWidget, EyedropperHelper, ColorSlidersWidget
 from app.ui.dialogs.BetterColorDialog.ColorDialogStyles import CUSTOM_COLOR_DIALOG_V2_STYLESHEET
@@ -13,7 +13,7 @@ class CustomColorDialog(QDialog):
     Picker on left, controls (tabs, hex) below picker, previews/swatches on right.
     Swatches are now tabbed, with recent colors displayed below them.
     """
-    colorSelected = pyqtSignal(QColor)
+    colorSelected = Signal(QColor)
 
     # Constants for settings
     SETTINGS_GROUP = "CustomColorDialogRingV2_LayoutB"

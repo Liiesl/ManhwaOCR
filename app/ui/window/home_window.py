@@ -9,9 +9,9 @@ import time
 from shutil import rmtree
 import traceback
 
-from PyQt5.QtWidgets import (QApplication, QWidget, QVBoxLayout, QPushButton, QFrame, QMainWindow, QLabel, QMessageBox,
+from PySide6.QtWidgets import (QApplication, QWidget, QVBoxLayout, QPushButton, QFrame, QMainWindow, QLabel, QMessageBox,
                              QScrollArea, QHBoxLayout, QDialog)
-from PyQt5.QtCore import Qt, QSettings, QDateTime, QThread, pyqtSignal, QEvent
+from PySide6.QtCore import Qt, QSettings, QDateTime, QThread, Signal, QEvent
 from app.utils import new_project, open_project, import_from_wfwf, correct_filenames
 from assets.styles import (HOME_STYLES, HOME_LEFT_LAYOUT_STYLES)
 from app.ui.window import CustomTitleBar, WindowResizer
@@ -160,9 +160,9 @@ class LoadingDialog(QDialog):
         QApplication.processEvents()
 
 class ProjectLoaderThread(QThread):
-    finished = pyqtSignal(str, str)
-    error = pyqtSignal(str)
-    progress_update = pyqtSignal(str)
+    finished = Signal(str, str)
+    error = Signal(str)
+    progress_update = Signal(str)
 
     def __init__(self, mmtl_path):
         super().__init__()
