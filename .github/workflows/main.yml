@@ -1,0 +1,53 @@
+# .github/workflows/main.yml
+
+name: Build MangaOCRTool with Nuitka
+
+# This workflow runs on every push to the 'main' branch
+on:
+  push:
+    branches:
+      - test-deploy
+
+jobs:
+  build-windows: # We'll name the job to reflect the OS
+    runs-on: windows-latest # Your command is for Windows, so we must run on a Windows machine
+
+    steps:
+      # 1. Get the code from your repository
+      - name: Check-out repository
+        uses: actions/checkout@v4
+
+      # 2. Set up a Python environment
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13.1' # Change this to the Python version you use
+
+      # 3. Install your project's dependencies (like PySide6)
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt 
+
+      # 4. Run Nuitka with your specific commands
+      - name: Build Executable with Nuitka
+        uses: Nuitka/Nuitka-Action@main
+        with:
+          script-name: main.py # Your main script
+          nuitka-args: >- # Use >- for multi-line strings in YAML
+            --standalone
+            --plugin-enable=pyside6
+            --windows-icon-from-ico=app_icon.ico
+            --company-name="YourCompany"
+            --product-name="MangaOCRTool"
+            --file-description="ManhwaOCR"
+            --file-version="1.0.0.0"
+            --product-version="1.0.0.0"
+            --output-filename="manhwa_ocr.exe"
+
+      # 5. Upload the final .exe file as a downloadable artifact
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: MangaOCRTool-Windows
+          path: main.dist/manhwa_ocr.exe # The output path for the .exe
