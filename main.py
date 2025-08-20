@@ -13,25 +13,57 @@ try:
 except ImportError:
     # PySide6 is not installed. Let's check for PyQt5.
     try:
-        import PyQt5 #type: ignore
         # If this import succeeds, it means the user has PyQt5.
         # We need to inform them to install PySide6.
-        # We can't use QApplication from PySide6, so we'll use it from PyQt5
-        # to show an error message.
+        # We will use PyQt5 components to show a more robust and helpful error message.
         from PyQt5.QtWidgets import QApplication, QMessageBox #type: ignore
+        from PyQt5.QtCore import Qt #type: ignore
+
         app = QApplication(sys.argv)
         msg_box = QMessageBox()
         msg_box.setIcon(QMessageBox.Critical)
-        msg_box.setText("Incorrect Library Detected")
-        msg_box.setInformativeText(
-            "This application requires PySide6, but it appears you have PyQt5 "
-            "installed.\nPlease uninstall PyQt5 and install PySide6.\n\n"
-            "You can do this by running:\n"
-            "pip uninstall PyQt5\n"
-            "pip install pyside6"
-        )
         msg_box.setWindowTitle("Dependency Error")
-        msg_box.exec_()
+        msg_box.setText("Incorrect GUI Library Detected")
+        
+        # Main informational text
+        msg_box.setInformativeText(
+            "This application requires the PySide6 library, but it appears you have PyQt5 installed instead.\n\n"
+            "To resolve this, please uninstall PyQt5 and then install PySide6."
+        )
+        
+        # --- NEW: Make the informative text selectable by the user ---
+        msg_box.setTextInteractionFlags(Qt.TextSelectableByMouse)
+
+        # --- NEW: Place the commands in a collapsible "Details" section ---
+        # This text is naturally copyable.
+        commands = "pip uninstall PyQt5\npip install pyside6"
+        msg_box.setDetailedText(
+            "Run the following commands in your terminal or command prompt:\n\n" + commands
+        )
+        
+        # --- NEW: Add a custom button to copy the commands to the clipboard ---
+        copy_button = msg_box.addButton("Copy Commands", QMessageBox.ActionRole)
+        msg_box.setDefaultButton(QMessageBox.Ok)
+
+        msg_box.exec_() # Show the dialog and wait for user interaction
+
+        # If the user clicked our custom "Copy" button, copy the commands
+        if msg_box.clickedButton() == copy_button:
+            try:
+                clipboard = QApplication.clipboard()
+                clipboard.setText(commands)
+                # Optional: Show a confirmation message
+                confirm_msg = QMessageBox()
+                confirm_msg.setIcon(QMessageBox.Information)
+                confirm_msg.setText("Commands copied to clipboard!")
+                confirm_msg.exec_()
+            except Exception as e:
+                # Handle cases where clipboard access might fail
+                error_msg = QMessageBox()
+                error_msg.setIcon(QMessageBox.Warning)
+                error_msg.setText(f"Could not access clipboard:\n{e}")
+                error_msg.exec_()
+                
     except ImportError:
         # Neither PySide6 nor PyQt5 are installed.
         # We can't show a GUI message, so we'll print to the console.
