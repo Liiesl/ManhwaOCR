@@ -37,7 +37,7 @@ jobs:
           nuitka-args: >- # Use >- for multi-line strings in YAML
             --standalone
             --plugin-enable=pyside6
-            --windows-icon-from-ico=app_icon.ico
+            --windows-icon-from-ico=launcher/app_icon.ico
             --company-name="YourCompany"
             --product-name="MangaOCRTool"
             --file-description="ManhwaOCR"
