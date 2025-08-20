@@ -261,51 +261,35 @@ class Home(QMainWindow):
         self.content_layout_hbox.addWidget(self.left_layout)
         self.content_layout_hbox.addWidget(self.content, 1)
         
-        self.load_recent_projects()
+        # REMOVED call to self.load_recent_projects()
+
+    def populate_recent_projects(self, projects_data):
+        """Populates the project list from preloaded data."""
+        self.projects_list.clear()
+        for project in projects_data:
+            project_item = self.projects_list.add_project(
+                name=project["name"],
+                path=project["path"],
+                last_opened=project["last_opened"]
+            )
+            project_item.main_window = self
 
     def changeEvent(self, event):
         if event.type() == QEvent.WindowStateChange:
             self.title_bar.update_maximize_icon()
         super().changeEvent(event)
 
-    def get_relative_time(self, timestamp_str):
-        if not timestamp_str: return "Never opened"
-        timestamp = QDateTime.fromString(timestamp_str, Qt.ISODate)
-        seconds = timestamp.secsTo(QDateTime.currentDateTime())
-        if seconds < 0: return timestamp.toString("MMM d, yyyy h:mm AP")
-        if seconds < 60: return "Just now"
-        minutes = seconds // 60
-        if minutes < 60: return f"{minutes} minute{'s' if minutes > 1 else ''} ago"
-        hours = seconds // 3600
-        if hours < 24: return f"{hours} hour{'s' if hours > 1 else ''} ago"
-        days = seconds // 86400
-        if days < 7: return f"{days} day{'s' if days > 1 else ''} ago"
-        weeks = seconds // 604800
-        if weeks < 4: return f"{weeks} week{'s' if weeks > 1 else ''} ago"
-        months = seconds // 2592000
-        if months < 12: return f"{months} month{'s' if months > 1 else ''} ago"
-        years = seconds // 31536000
-        return f"{years} year{'s' if years > 1 else ''} ago"
-
-    def load_recent_projects(self):
-        recent_projects = self.settings.value("recent_projects", [])
-        recent_timestamps = self.settings.value("recent_timestamps", {})
-        
-        self.projects_list.clear()
-        for path in recent_projects:
-            if os.path.exists(path):
-                filename = os.path.basename(path)
-                timestamp = recent_timestamps.get(path, "")
-                last_opened = self.get_relative_time(timestamp)
-                project_item = self.projects_list.add_project(filename, path, last_opened)
-                project_item.main_window = self
-
     def open_project_from_path(self, path):
         if os.path.exists(path):
             self.launch_main_app(path)
         else:
             QMessageBox.warning(self, "Error", "Project file no longer exists")
-            self.load_recent_projects()
+            # Refresh the list in-memory if a file is not found.
+            # This is a simple way to handle it without re-reading settings.
+            all_items = [self.projects_list.projects_layout.itemAt(i).widget() for i in range(self.projects_list.projects_layout.count() - 1)]
+            for item in all_items:
+                if item and item.path == path:
+                    item.deleteLater()
 
     def new_project(self):
         new_project(self)

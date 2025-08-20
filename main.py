@@ -9,17 +9,17 @@ import time
 # --- Dependency Checking ---
 try:
     from PySide6.QtWidgets import QApplication, QSplashScreen, QMessageBox
-    from PySide6.QtCore import Qt, QThread, Signal
+    from PySide6.QtCore import Qt, QThread, Signal, QSettings, QDateTime
     from PySide6.QtGui import QPixmap, QPainter, QFont, QColor
 except ImportError:
     # PySide6 is not installed. Let's check for PyQt5.
     try:
-        import PyQt5
+        import PyQt5 #type: ignore
         # If this import succeeds, it means the user has PyQt5.
         # We need to inform them to install PySide6.
         # We can't use QApplication from PySide6, so we'll use it from PyQt5
         # to show an error message.
-        from PyQt5.QtWidgets import QApplication, QMessageBox
+        from PyQt5.QtWidgets import QApplication, QMessageBox #type: ignore
         app = QApplication(sys.argv)
         msg_box = QMessageBox()
         msg_box.setIcon(QMessageBox.Critical)
@@ -62,47 +62,93 @@ class CustomSplashScreen(QSplashScreen):
         QApplication.processEvents()
 
 
+def get_relative_time(timestamp_str):
+    """Calculates a human-readable relative time string from an ISO date string."""
+    if not timestamp_str: return "Never opened"
+    timestamp = QDateTime.fromString(timestamp_str, Qt.ISODate)
+    seconds = timestamp.secsTo(QDateTime.currentDateTime())
+    if seconds < 0: return timestamp.toString("MMM d, yyyy h:mm AP")
+    if seconds < 60: return "Just now"
+    minutes = seconds // 60
+    if minutes < 60: return f"{minutes} minute{'s' if minutes > 1 else ''} ago"
+    hours = seconds // 3600
+    if hours < 24: return f"{hours} hour{'s' if hours > 1 else ''} ago"
+    days = seconds // 86400
+    if days < 7: return f"{days} day{'s' if days > 1 else ''} ago"
+    weeks = seconds // 604800
+    if weeks < 4: return f"{weeks} week{'s' if weeks > 1 else ''} ago"
+    months = seconds // 2592000
+    if months < 12: return f"{months} month{'s' if months > 1 else ''} ago"
+    years = seconds // 31536000
+    return f"{years} year{'s' if years > 1 else ''} ago"
+
 class Preloader(QThread):
     """
     Performs initial, non-GUI tasks in a separate thread.
+    This now includes loading the recent projects list.
     """
-    finished = Signal()
+    finished = Signal(list)  # Signal will emit the list of loaded project data
     progress_update = Signal(str)
 
     def run(self):
         """The entry point for the thread."""
-        self.progress_update.emit("Loading application assets...")
-        time.sleep(0.5)
+        self.progress_update.emit("Loading application settings...")
+        time.sleep(0.3)
+        
+        # --- Actually preload the recent projects data ---
+        self.progress_update.emit("Finding recent projects...")
+        projects_data = []
+        try:
+            settings = QSettings("YourCompany", "MangaOCRTool")
+            recent_projects = settings.value("recent_projects", [])
+            recent_timestamps = settings.value("recent_timestamps", {})
+            
+            for path in recent_projects:
+                if os.path.exists(path):
+                    filename = os.path.basename(path)
+                    timestamp = recent_timestamps.get(path, "")
+                    last_opened = get_relative_time(timestamp)
+                    projects_data.append({
+                        "name": filename,
+                        "path": path,
+                        "last_opened": last_opened
+                    })
+            time.sleep(0.5) # Simulate work
+        except Exception as e:
+            print(f"Could not preload recent projects: {e}")
+            # Continue with an empty list on error
 
         self.progress_update.emit("Preparing main interface...")
-        time.sleep(0.8)
+        time.sleep(0.4)
 
         self.progress_update.emit("Finalizing...")
-        time.sleep(0.1)
+        time.sleep(0.2)
 
-        self.finished.emit()
+        self.finished.emit(projects_data)
 
 
 # --- Global variables to hold instances ---
 splash = None
 home_window = None
 
-def on_preload_finished():
+def on_preload_finished(projects_data):
     """
-    This slot runs on the main thread. It creates the Home window instance
-    and then decides whether to show it or immediately launch a project.
+    This slot runs on the main thread. It creates the Home window instance,
+    populates it with the preloaded data, and then decides whether to show
+    it or immediately launch a project.
     """
     global home_window, splash
     print("[ENTRY] Preloading finished. Handling window creation.")
 
     # --- Import Home from the correct module ---
-    # Make sure this import path is correct and doesn't cause circular imports
-    from app.ui.window.home_window import Home  # Import from home_window.py directly
+    from app.ui.window.home_window import Home
     
     # Only create Home window instance if it doesn't exist
     if home_window is None:
         home_window = Home()
-        print("[ENTRY] Home window instance created.")
+        # --- Populate the home window with the preloaded data ---
+        home_window.populate_recent_projects(projects_data)
+        print("[ENTRY] Home window instance created and populated.")
 
     # Check for a project file in command-line arguments.
     project_to_open = None
