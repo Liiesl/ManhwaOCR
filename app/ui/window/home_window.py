@@ -196,8 +196,9 @@ class ProjectLoaderThread(QThread):
                 rmtree(temp_dir, ignore_errors=True)
 
 class Home(QMainWindow):
-    def __init__(self):
+    def __init__(self, progress_signal=None):
         super().__init__()
+        self.progress_signal = progress_signal
         self.settings = QSettings("YourCompany", "MangaOCRTool")
         self.setWindowFlags(Qt.FramelessWindowHint)
         self.setAttribute(Qt.WA_TranslucentBackground)
@@ -206,6 +207,13 @@ class Home(QMainWindow):
         self.resizer = WindowResizer(self)
         
     def init_ui(self):
+        def report_progress(message):
+            """Helper function to report progress if the signal is available."""
+            if self.progress_signal:
+                self.progress_signal.emit(message)
+                time.sleep(0.15) # Pause to make the message readable
+
+        report_progress("Initializing main window...")
         self.setMinimumSize(800, 600)
         
         self.container = QFrame()
@@ -213,10 +221,12 @@ class Home(QMainWindow):
         self.main_layout.setContentsMargins(1, 1, 1, 1)
         self.main_layout.setSpacing(0)
         
+        report_progress("Creating custom title bar...")
         self.title_bar = CustomTitleBar(self)
         self.main_layout.addWidget(self.title_bar)
         self.title_bar.setState(TitleBarState.HOME)
 
+        report_progress("Applying styles...")
         self.setStyleSheet(HOME_STYLES)
         
         self.content_widget = QWidget()
@@ -226,6 +236,7 @@ class Home(QMainWindow):
         self.content_layout_hbox = QHBoxLayout(self.content_widget)
         self.content_layout_hbox.setContentsMargins(10, 10, 10, 10)
     
+        report_progress("Building action panel...")
         self.left_layout_layout = QVBoxLayout()
         self.left_layout_layout.setContentsMargins(10, 10, 10, 10)
         self.left_layout_layout.setSpacing(15)
@@ -248,6 +259,7 @@ class Home(QMainWindow):
         self.left_layout.setMaximumWidth(200)
         self.left_layout.setStyleSheet(HOME_LEFT_LAYOUT_STYLES)
         
+        report_progress("Configuring project list...")
         self.content = QWidget()
         self.content_layout = QVBoxLayout(self.content)
         
@@ -258,6 +270,7 @@ class Home(QMainWindow):
         self.projects_list = ProjectsListWidget()
         self.content_layout.addWidget(self.projects_list)
         
+        report_progress("Assembling final layout...")
         self.content_layout_hbox.addWidget(self.left_layout)
         self.content_layout_hbox.addWidget(self.content, 1)
         

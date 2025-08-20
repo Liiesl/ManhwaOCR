@@ -4,12 +4,11 @@
 
 import sys
 import os
-import time
 
 # --- Dependency Checking ---
 try:
     from PySide6.QtWidgets import QApplication, QSplashScreen, QMessageBox
-    from PySide6.QtCore import Qt, QThread, Signal, QSettings, QDateTime
+    from PySide6.QtCore import Qt, QThread, Signal, QSettings, QDateTime, QObject
     from PySide6.QtGui import QPixmap, QPainter, QFont, QColor
 except ImportError:
     # PySide6 is not installed. Let's check for PyQt5.
@@ -93,7 +92,6 @@ class Preloader(QThread):
     def run(self):
         """The entry point for the thread."""
         self.progress_update.emit("Loading application settings...")
-        time.sleep(0.3)
         
         # --- Actually preload the recent projects data ---
         self.progress_update.emit("Finding recent projects...")
@@ -113,16 +111,9 @@ class Preloader(QThread):
                         "path": path,
                         "last_opened": last_opened
                     })
-            time.sleep(0.5) # Simulate work
         except Exception as e:
             print(f"Could not preload recent projects: {e}")
             # Continue with an empty list on error
-
-        self.progress_update.emit("Preparing main interface...")
-        time.sleep(0.4)
-
-        self.progress_update.emit("Finalizing...")
-        time.sleep(0.2)
 
         self.finished.emit(projects_data)
 
@@ -137,7 +128,7 @@ def on_preload_finished(projects_data):
     populates it with the preloaded data, and then decides whether to show
     it or immediately launch a project.
     """
-    global home_window, splash
+    global home_window, splash, preloader
     print("[ENTRY] Preloading finished. Handling window creation.")
 
     # --- Import Home from the correct module ---
@@ -145,7 +136,11 @@ def on_preload_finished(projects_data):
     
     # Only create Home window instance if it doesn't exist
     if home_window is None:
-        home_window = Home()
+        # Pass the preloader's progress signal to the Home window constructor.
+        # Now the Home window can also send messages to the splash screen.
+        home_window = Home(progress_signal=preloader.progress_update)
+        
+        preloader.progress_update.emit("Populating recent projects...")
         # --- Populate the home window with the preloaded data ---
         home_window.populate_recent_projects(projects_data)
         print("[ENTRY] Home window instance created and populated.")
