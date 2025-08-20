@@ -6,10 +6,38 @@ import sys
 import os
 import time
 
-# --- 1. Bare minimum imports for initial launch ---
-from PySide6.QtWidgets import QApplication, QSplashScreen, QMessageBox
-from PySide6.QtCore import Qt, QThread, Signal
-from PySide6.QtGui import QPixmap, QPainter, QFont, QColor
+# --- Dependency Checking ---
+try:
+    from PySide6.QtWidgets import QApplication, QSplashScreen, QMessageBox
+    from PySide6.QtCore import Qt, QThread, Signal
+    from PySide6.QtGui import QPixmap, QPainter, QFont, QColor
+except ImportError:
+    # PySide6 is not installed. Let's check for PyQt5.
+    try:
+        import PyQt5
+        # If this import succeeds, it means the user has PyQt5.
+        # We need to inform them to install PySide6.
+        # We can't use QApplication from PySide6, so we'll use it from PyQt5
+        # to show an error message.
+        from PyQt5.QtWidgets import QApplication, QMessageBox
+        app = QApplication(sys.argv)
+        msg_box = QMessageBox()
+        msg_box.setIcon(QMessageBox.Critical)
+        msg_box.setText("Incorrect Library Detected")
+        msg_box.setInformativeText(
+            "This application requires PySide6, but it appears you have PyQt5 "
+            "installed.\nPlease uninstall PyQt5 and install PySide6.\n\n"
+            "You can do this by running:\n"
+            "pip uninstall PyQt5\n"
+            "pip install pyside6"
+        )
+        msg_box.setWindowTitle("Dependency Error")
+        msg_box.exec_()
+    except ImportError:
+        # Neither PySide6 nor PyQt5 are installed.
+        # We can't show a GUI message, so we'll print to the console.
+        print("CRITICAL ERROR: PySide6 is not installed. Please install it by running: pip install pyside6")
+    sys.exit(1)  # Exit the application
 
 
 class CustomSplashScreen(QSplashScreen):
@@ -109,6 +137,8 @@ def on_preload_finished():
 
 
 if __name__ == '__main__':
+    # The dependency check is now at the top of the file, so if we get here,
+    # we can assume PySide6 is installed.
     app = QApplication(sys.argv)
     
     # Check if application is already running (optional)
@@ -134,4 +164,4 @@ if __name__ == '__main__':
     preloader.finished.connect(on_preload_finished)
     preloader.start()
 
-    sys.exit(app.exec_())
+    sys.exit(app.exec())

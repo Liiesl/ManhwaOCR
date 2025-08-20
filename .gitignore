@@ -14,3 +14,4 @@ nuitka-crash-report.xml
 legacy/
 clean.bat
 test.py
+.venv/
