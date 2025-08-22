@@ -21,12 +21,13 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.13.1' 
+          python-version: '3.12' 
 
       # 3. Install project's dependencies
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
+          pip install torch torchvision --index-url https://download.pytorch.org/whl/cu128
           pip install -r requirements.txt 
 
       # 4. Run Nuitka build
@@ -35,7 +36,8 @@ jobs:
         with:
           script-name: main.py 
           mode: standalone
-          msvc: latest
+          include-package: 'easyocr,bidi'
+          mingw64: true
           enable-plugins: pyside6
           windows-icon-from-ico: launcher/app_icon.ico
           company-name: "YourCompany"
@@ -43,11 +45,10 @@ jobs:
           file-description: "ManhwaOCR"
           file-version: "1.0.0.0"
           product-version: "1.0.0.0"
-          output-file: "manhwa_ocr.exe"
 
       # 5. Upload the final .exe file as a downloadable artifact
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
           name: MangaOCRTool-Windows
-          path: main.dist/manhwa_ocr.exe 
+          path: build/main.dist/
